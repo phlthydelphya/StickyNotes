@@ -1,11 +1,38 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Rich text editing on a GtkTextView: inline formatting, bullets, images, (de)serialization."""
+"""Rich text editing on a GtkTextView: inline formatting, lists, images, (de)serialization."""
+
+import re
 
 from gi.repository import Gdk, GObject, Gtk, Pango
 
 TAGS = ("bold", "italic", "underline", "strike")
 BULLET = "• "
+CHECK_OPEN = "☐ "
+CHECK_DONE = "☑ "
+NUMBER = re.compile(r"(\d{1,4})\. ")
+LIST_STYLES = ("bullet", "number", "check")
 IMAGE_MAX_WIDTH = 260
+
+
+def line_prefix(text):
+    """List marker at the start of a line: (style or None, marker length, number).
+
+    Lists are plain text markers, so notes stay readable anywhere and the
+    saved format does not change."""
+    if text.startswith(BULLET):
+        return "bullet", len(BULLET), 0
+    if text.startswith((CHECK_OPEN, CHECK_DONE)):
+        return "check", len(CHECK_OPEN), 0
+    match = NUMBER.match(text)
+    if match:
+        return "number", match.end(), int(match.group(1))
+    return None, 0, 0
+
+
+def marker(style, number=1):
+    if style == "number":
+        return f"{number}. "
+    return CHECK_OPEN if style == "check" else BULLET
 
 
 def install_tags(buffer):
@@ -81,6 +108,9 @@ class RichEditor(GObject.Object):
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._on_key_pressed)
         view.add_controller(keys)
+        click = Gtk.GestureClick(button=Gdk.BUTTON_PRIMARY)
+        click.connect("pressed", self._on_click)
+        view.add_controller(click)
 
     # --- load / save ---------------------------------------------------------
     def load(self, segs):
@@ -144,16 +174,27 @@ class RichEditor(GObject.Object):
             self.typing ^= {name}
         self.emit("state-changed")
 
-    # --- bullets ---------------------------------------------------------------
+    # --- lists -----------------------------------------------------------------
     def _line_start(self, line):
         _ok, it = self.buf.get_iter_at_line(line)
         return it
 
-    def _line_has_bullet(self, line):
+    def _prefix(self, line):
         start = self._line_start(line)
         end = start.copy()
-        end.forward_chars(len(BULLET))
-        return self.buf.get_text(start, end, False) == BULLET
+        if not end.ends_line():
+            end.forward_to_line_end()
+        return line_prefix(self.buf.get_text(start, end, False))
+
+    def _replace_prefix(self, line, length, text):
+        start = self._line_start(line)
+        if length:
+            end = start.copy()
+            end.forward_chars(length)
+            self.buf.delete(start, end)
+            start = self._line_start(line)
+        if text:
+            self.buf.insert(start, text)
 
     def _selected_lines(self):
         bounds = self.buf.get_selection_bounds()
@@ -163,23 +204,66 @@ class RichEditor(GObject.Object):
             start = end = self.buf.get_iter_at_mark(self.buf.get_insert())
         return range(start.get_line(), end.get_line() + 1)
 
-    def bullets_active(self):
-        return all(self._line_has_bullet(n) for n in self._selected_lines())
+    def list_style(self):
+        """The list style every selected line has, else None."""
+        styles = {self._prefix(n)[0] for n in self._selected_lines()}
+        return styles.pop() if len(styles) == 1 else None
 
-    def toggle_bullets(self):
+    def bullets_active(self):
+        return self.list_style() == "bullet"
+
+    def set_list(self, style):
+        """Make the selected lines a list of style; if they already are one, unlist them."""
         lines = self._selected_lines()
-        remove = all(self._line_has_bullet(n) for n in lines)
+        remove = self.list_style() == style
+        number = 1
+        if lines.start > 0:
+            before, _len, num = self._prefix(lines.start - 1)
+            if before == "number":
+                number = num + 1  # continue the list above
         self.buf.begin_user_action()
         for n in lines:
-            start = self._line_start(n)
-            if remove:
-                end = start.copy()
-                end.forward_chars(len(BULLET))
-                self.buf.delete(start, end)
-            elif not self._line_has_bullet(n):
-                self.buf.insert(start, BULLET)
+            _style, length, _num = self._prefix(n)
+            self._replace_prefix(n, length, "" if remove else marker(style, number))
+            number += 1
+        self._renumber(lines.stop)
         self.buf.end_user_action()
         self.emit("state-changed")
+
+    def toggle_bullets(self):
+        self.set_list("bullet")
+
+    def _renumber(self, line):
+        """Number the numbered lines from line on, following the line above."""
+        prev_style, _len, prev = self._prefix(line - 1) if line > 0 else (None, 0, 0)
+        expected = prev + 1 if prev_style == "number" else 1
+        while line < self.buf.get_line_count():
+            style, length, num = self._prefix(line)
+            if style != "number":
+                break
+            if num != expected:
+                self._replace_prefix(line, length, marker("number", expected))
+            expected += 1
+            line += 1
+
+    def toggle_check(self, line):
+        style, length, _num = self._prefix(line)
+        if style != "check":
+            return
+        start = self._line_start(line)
+        end = start.copy()
+        end.forward_chars(length)
+        done = self.buf.get_text(start, end, False) == CHECK_DONE
+        self.buf.begin_user_action()
+        self._replace_prefix(line, length, CHECK_OPEN if done else CHECK_DONE)
+        self.buf.end_user_action()
+
+    def _on_click(self, gesture, _n_press, x, y):
+        bx, by = self.view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, int(x), int(y))
+        found, it = self.view.get_iter_at_location(bx, by)
+        if found and it.get_line_offset() == 0 and it.get_char() in (CHECK_OPEN[0], CHECK_DONE[0]):
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self.toggle_check(it.get_line())
 
     def _on_key_pressed(self, _ctrl, keyval, _code, state):
         if keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
@@ -191,17 +275,23 @@ class RichEditor(GObject.Object):
             return False
         cursor = self.buf.get_iter_at_mark(self.buf.get_insert())
         line = cursor.get_line()
-        if not self._line_has_bullet(line):
-            return False
+        style, length, number = self._prefix(line)
+        if style is None or cursor.get_line_offset() < length:
+            return False  # not a list, or before the marker: a plain new line
         start = self._line_start(line)
         end = start.copy()
         if not end.ends_line():
             end.forward_to_line_end()
-        if self.buf.get_text(start, end, False).strip() == BULLET.strip():
-            # Enter on an empty bullet ends the list.
-            self.buf.delete(start, end)
+        self.buf.begin_user_action()
+        if not self.buf.get_text(start, end, False)[length:].strip():
+            # Enter on an empty item ends the list.
+            self._replace_prefix(line, length, "")
+            self._renumber(line + 1)
         else:
-            self.buf.insert_at_cursor("\n" + BULLET)
+            self.buf.insert_at_cursor("\n" + marker(style, number + 1))
+            if style == "number":
+                self._renumber(line + 2)
+        self.buf.end_user_action()
         self.view.scroll_mark_onscreen(self.buf.get_insert())
         return True
 

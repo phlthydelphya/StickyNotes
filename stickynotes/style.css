@@ -50,7 +50,8 @@ window.sticky .format-bar button {
   color: inherit;
 }
 
-window.sticky .format-bar button:checked {
+window.sticky .format-bar button:checked,
+window.sticky .format-bar menubutton.in-list > button {
   background-color: alpha(currentColor, 0.14);
 }
 

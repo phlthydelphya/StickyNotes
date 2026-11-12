@@ -9,7 +9,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk  # noqa: E402
 
-from stickynotes.richtext import RichEditor, install_tags, serialize, deserialize  # noqa: E402
+from stickynotes.richtext import (RichEditor, deserialize, install_tags, line_prefix,  # noqa: E402
+                                  serialize)
 from stickynotes.store import LoadState, Note, NoteStore  # noqa: E402
 
 
@@ -95,9 +96,74 @@ class RichTextTest(unittest.TestCase):
         deserialize(buf, segs, insert_image)
         self.assertEqual(serialize(buf, anchors), segs)
 
+    def test_line_prefix(self):
+        self.assertEqual(line_prefix("• a"), ("bullet", 2, 0))
+        self.assertEqual(line_prefix("12. a"), ("number", 4, 12))
+        self.assertEqual(line_prefix("☐ a"), ("check", 2, 0))
+        self.assertEqual(line_prefix("☑ "), ("check", 2, 0))
+        for text in ("", "a", "1.a", "-1. a", "•a"):
+            self.assertEqual(line_prefix(text)[0], None, text)
+
 
 @unittest.skipIf(Gdk.Display.get_default() is None, "needs a display")
 class EditorTest(unittest.TestCase):
+    def editor(self, text):
+        editor = RichEditor(Gtk.TextView(), lambda name: Path("/nonexistent", name))
+        editor.load([{"t": text, "s": []}])
+        return editor
+
+    def text(self, editor):
+        buf = editor.buf
+        return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+
+    def select_all(self, editor):
+        editor.buf.select_range(editor.buf.get_start_iter(), editor.buf.get_end_iter())
+
+    def enter_at_end_of_line(self, editor, line):
+        _ok, it = editor.buf.get_iter_at_line(line)
+        if not it.ends_line():
+            it.forward_to_line_end()
+        editor.buf.place_cursor(it)
+        return editor._on_key_pressed(None, Gdk.KEY_Return, 0, 0)
+
+    def test_list_styles_switch_and_toggle_off(self):
+        editor = self.editor("a\nb")
+        self.select_all(editor)
+        editor.set_list("bullet")
+        self.assertEqual(self.text(editor), "• a\n• b")
+        self.assertEqual(editor.list_style(), "bullet")
+        editor.set_list("number")
+        self.assertEqual(self.text(editor), "1. a\n2. b")
+        editor.set_list("number")
+        self.assertEqual(self.text(editor), "a\nb")
+        self.assertIsNone(editor.list_style())
+        editor.set_list("check")
+        self.assertEqual(self.text(editor), "☐ a\n☐ b")
+        editor.toggle_check(1)
+        self.assertEqual(self.text(editor), "☐ a\n☑ b")
+        editor.toggle_check(1)
+        self.assertEqual(self.text(editor), "☐ a\n☐ b")
+
+    def test_enter_continues_and_renumbers(self):
+        editor = self.editor("1. a\n2. b")
+        self.assertTrue(self.enter_at_end_of_line(editor, 0))
+        self.assertEqual(self.text(editor), "1. a\n2. \n3. b")
+        # Enter on the empty item ends the list; the rest restarts at 1.
+        self.assertTrue(self.enter_at_end_of_line(editor, 1))
+        self.assertEqual(self.text(editor), "1. a\n\n1. b")
+        editor = self.editor("☑ done")
+        self.enter_at_end_of_line(editor, 0)
+        self.assertEqual(self.text(editor), "☑ done\n☐ ")  # new items start unchecked
+        editor = self.editor("plain")
+        self.assertFalse(self.enter_at_end_of_line(editor, 0))
+
+    def test_numbering_continues_list_above(self):
+        editor = self.editor("1. a\nb\nc")
+        _ok, start = editor.buf.get_iter_at_line(1)
+        editor.buf.select_range(start, editor.buf.get_end_iter())
+        editor.set_list("number")
+        self.assertEqual(self.text(editor), "1. a\n2. b\n3. c")
+
     def test_unreadable_image_keeps_its_segment(self):
         with tempfile.TemporaryDirectory() as d:
             editor = RichEditor(Gtk.TextView(), lambda name: Path(d, name))

@@ -18,6 +18,13 @@ FORMAT_BUTTONS = (
     ("strike", "format-text-strikethrough-symbolic", "Strikethrough (Ctrl+T)"),
 )
 
+# style -> (menu label, button icon)
+LIST_MENU = (
+    ("bullet", "Bullets", "view-list-bullet-symbolic"),
+    ("number", "Numbered list", "view-list-ordered-symbolic"),
+    ("check", "Checklist", "checkbox-checked-symbolic"),
+)
+
 
 class NoteWindow(Adw.Window):
     def __init__(self, app, note):
@@ -110,12 +117,15 @@ class NoteWindow(Adw.Window):
             handler = btn.connect("toggled", self._on_format_toggled, name)
             self.format_buttons[name] = (btn, handler)
             bar.append(btn)
-        bullets = Gtk.ToggleButton(icon_name="view-list-bullet-symbolic",
-                                   tooltip_text="Bullets (Ctrl+Shift+L)", focus_on_click=False)
-        bullets.add_css_class("flat")
-        handler = bullets.connect("toggled", self._on_bullets_toggled)
-        self.format_buttons["bullets"] = (bullets, handler)
-        bar.append(bullets)
+        menu = Gio.Menu()
+        for style, text, _icon in LIST_MENU:
+            menu.append(text, f"win.list-style::{style}")
+        self.list_button = Gtk.MenuButton(icon_name=LIST_MENU[0][2], menu_model=menu,
+                                          tooltip_text="Lists: bullets (Ctrl+Shift+L), "
+                                                       "numbers, checklist")
+        self.list_button.add_css_class("flat")
+        self.list_button.add_css_class("list-button")
+        bar.append(self.list_button)
         image = Gtk.Button(icon_name="insert-image-symbolic", tooltip_text="Add image",
                            focus_on_click=False, action_name="win.insert-image")
         image.add_css_class("flat")
@@ -129,6 +139,11 @@ class NoteWindow(Adw.Window):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", lambda _a, _p, n=name: self.editor.toggle(n))
             group.add_action(act)
+        # Radio state shows the current lines' style; choosing it again unlists them.
+        self.list_action = Gio.SimpleAction.new_stateful("list-style", GLib.VariantType("s"),
+                                                         GLib.Variant("s", ""))
+        self.list_action.connect("activate", self._on_list_style)
+        group.add_action(self.list_action)
         for name, cb in (("bullets", lambda *_: self.editor.toggle_bullets()),
                          ("delete", lambda *_: self.confirm_delete()),
                          ("insert-image", lambda *_: self._choose_image())):
@@ -139,19 +154,28 @@ class NoteWindow(Adw.Window):
     # --- state sync ------------------------------------------------------------
     def _sync_format_state(self):
         for name, (btn, handler) in self.format_buttons.items():
-            active = self.editor.bullets_active() if name == "bullets" else self.editor.is_active(name)
+            active = self.editor.is_active(name)
             if btn.get_active() != active:
                 btn.handler_block(handler)
                 btn.set_active(active)
                 btn.handler_unblock(handler)
+        style = self.editor.list_style()
+        self.list_action.set_state(GLib.Variant("s", style or ""))
+        icons = {s: icon for s, _text, icon in LIST_MENU}
+        self.list_button.set_icon_name(icons.get(style, LIST_MENU[0][2]))
+        if style:
+            self.list_button.add_css_class("in-list")
+        else:
+            self.list_button.remove_css_class("in-list")
 
     def _on_format_toggled(self, _btn, name):
         self.editor.toggle(name)
         self.view.grab_focus()
 
-    def _on_bullets_toggled(self, _btn):
-        self.editor.toggle_bullets()
-        self.view.grab_focus()
+    def _on_list_style(self, _action, param):
+        self.editor.set_list(param.get_string())
+        # After the menu closes, which moves focus back to its button.
+        GLib.idle_add(lambda: self.view.grab_focus() and GLib.SOURCE_REMOVE)
 
     def _on_active_changed(self, *_):
         self.toolbar.set_reveal_bottom_bars(self.is_active())
