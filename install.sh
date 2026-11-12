@@ -97,13 +97,19 @@ install -D -m 644 "$SRC/data/$APP_ID-symbolic.svg" "$SYMBOLIC_ICON"
 update-desktop-database -q "$(dirname "$DESKTOP")" 2>/dev/null || true
 gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 if (( AUTOSTART_OPT )); then
-  integrate "$LIB" "i.set_autostart(True, sys.argv[3])" "$BIN"
-  echo "Autostart enabled: $AUTOSTART"
+  if integrate "$LIB" "i.set_autostart(True, sys.argv[3])" "$BIN"; then
+    echo "Autostart enabled: $AUTOSTART"
+  else
+    echo "warning: could not enable autostart; turn it on in Preferences" >&2
+  fi
 fi
+# The new version is in place from here: a desktop-settings failure below must
+# warn, not make the EXIT trap roll back a working install.
 # Fresh install: turn the shortcut on unless --no-shortcut. Upgrade: keep the
 # choice made in Preferences and only refresh the command of an enabled one.
 if (( HAD_TREE )); then
-  integrate "$LIB" "i.shortcut_enabled() and i.set_shortcut(True, sys.argv[3]); i.autostart_enabled() and i.set_autostart(True, sys.argv[3])" "$BIN"
+  integrate "$LIB" "i.shortcut_enabled() and i.set_shortcut(True, sys.argv[3]); i.autostart_enabled() and i.set_autostart(True, sys.argv[3])" "$BIN" \
+    || echo "warning: could not refresh the shortcut or autostart entry" >&2
 elif (( SHORTCUT_OPT )); then
   if integrate "$LIB" "sys.exit(0 if i.set_shortcut(True, sys.argv[3]) else 1)" "$BIN"; then
     echo "Shortcut: Ctrl+Alt+N creates a new note"

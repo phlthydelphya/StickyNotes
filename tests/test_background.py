@@ -86,3 +86,78 @@ def test_shortcut_add_remove_keeps_other_bindings(tmp_path):
     assert lines[0].count("dusk-sticky-notes/") == 1 and "other/" in lines[0]
     assert lines[1] == "<Control><Alt>n /home/u/.local/bin/dusk-sticky-notes --new-note"
     assert "dusk-sticky-notes/" not in lines[2] and "other/" in lines[2] and "''" in lines[2]
+
+
+def test_desktop_exec_escapes_percent():
+    from stickynotes.integration import _desktop_exec_quote
+    assert _desktop_exec_quote("/opt/100%/run") == "/opt/100%%/run"
+    assert _desktop_exec_quote("/my 50%/run") == '"/my 50%%/run"'
+
+
+class FakeConn:
+    def __init__(self):
+        self.calls = []
+
+    def get_unique_name(self):
+        return ":1.42"
+
+    def call(self, *args):
+        self.calls.append(args[3])
+
+
+def run_loop(milliseconds):
+    from gi.repository import GLib
+    loop = GLib.MainLoop()
+    GLib.timeout_add(milliseconds, lambda: loop.quit() or GLib.SOURCE_REMOVE)
+    loop.run()
+
+
+def test_tray_waits_before_reporting_vanished_watcher(monkeypatch):
+    from stickynotes import tray as tray_mod
+    events = []
+    tray = tray_mod.Tray(None, "x", "X", on_availability=events.append)
+    tray.available = True
+    # Watcher drops and comes back (shell restart): no availability change.
+    tray._on_watcher_vanished(None, tray_mod.WATCHER)
+    assert tray._grace
+    conn = FakeConn()
+    tray._on_watcher_appeared(conn, tray_mod.WATCHER, ":1.7")
+    assert not tray._grace and conn.calls == ["RegisterStatusNotifierItem"]
+    assert events == []
+    # Watcher stays gone: reported after the grace period.
+    monkeypatch.setattr(tray_mod, "VANISH_GRACE_S", 0)
+    tray._on_watcher_vanished(None, tray_mod.WATCHER)
+    run_loop(1100)  # second-granularity timer
+    assert events == [False] and not tray.available
+    # Absent from the start: nothing to wait for, no timer.
+    tray._on_watcher_vanished(None, tray_mod.WATCHER)
+    assert not tray._grace
+
+
+def test_preference_switches_revert_when_change_fails(monkeypatch, tmp_path):
+    import gi
+    gi.require_version("Gdk", "4.0")
+    from types import SimpleNamespace
+    from gi.repository import Gdk
+    if Gdk.Display.get_default() is None:
+        import pytest
+        pytest.skip("needs a display; run under xvfb-run")
+    from gi.repository import Adw
+    Adw.init()
+    from stickynotes import preferences as p
+
+    def fail(enabled, launcher=None):
+        raise OSError("read-only config")
+    monkeypatch.setattr(p.integration, "set_autostart", fail)
+    monkeypatch.setattr(p.integration, "autostart_enabled", lambda: False)
+    monkeypatch.setattr(p.integration, "set_shortcut", lambda enabled, launcher=None: False)
+    monkeypatch.setattr(p.integration, "shortcut_enabled", lambda: False)
+    monkeypatch.setattr(p.integration, "shortcut_supported", lambda: True)
+    app = SimpleNamespace(prefs=Preferences(tmp_path), tray=None,
+                          set_close_to_tray=lambda enabled: False)
+    dialog = p.PreferencesDialog(app)
+    for row in (dialog.autostart_row, dialog.shortcut_row):
+        row.set_active(True)
+        assert not row.get_active()
+    dialog.tray_row.set_active(False)  # app kept True: switch follows the app
+    assert dialog.tray_row.get_active()

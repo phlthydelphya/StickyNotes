@@ -11,6 +11,9 @@ WATCHER = "org.kde.StatusNotifierWatcher"
 WATCHER_PATH = "/StatusNotifierWatcher"
 ITEM_PATH = "/StatusNotifierItem"
 MENU_PATH = "/MenuBar"
+# A shell restart or extension reload drops the watcher for a moment; waiting
+# before reporting the tray gone keeps a window-less app from quitting then.
+VANISH_GRACE_S = 10
 
 ITEM_XML = """
 <node>
@@ -130,6 +133,7 @@ class Tray:
         self.conn = None
         self._ids = []
         self._watch = 0
+        self._grace = 0
 
     @staticmethod
     def watcher_present(conn):
@@ -156,9 +160,13 @@ class Tray:
         self._watch = Gio.bus_watch_name_on_connection(
             self.conn, WATCHER, Gio.BusNameWatcherFlags.NONE, self._on_watcher_appeared,
             self._on_watcher_vanished)
-        return self.watcher_present(self.conn)
+        # Count the tray as present now so the caller can hold the app at once;
+        # a failed registration then reports it gone through on_availability.
+        self.available = self.watcher_present(self.conn)
+        return self.available
 
     def stop(self):
+        self._cancel_grace()
         if self._watch:
             Gio.bus_unwatch_name(self._watch)
             self._watch = 0
@@ -169,6 +177,7 @@ class Tray:
 
     # --- watcher -------------------------------------------------------------------
     def _on_watcher_appeared(self, conn, _name, _owner):
+        self._cancel_grace()
         conn.call(WATCHER, WATCHER_PATH, WATCHER, "RegisterStatusNotifierItem",
                   GLib.Variant("(s)", (conn.get_unique_name(),)), None,
                   Gio.DBusCallFlags.NONE, 5000, None, self._on_registered)
@@ -182,7 +191,18 @@ class Tray:
         self._set_available(True)
 
     def _on_watcher_vanished(self, _conn, _name):
+        if self.available and not self._grace:
+            self._grace = GLib.timeout_add_seconds(VANISH_GRACE_S, self._on_grace_expired)
+
+    def _on_grace_expired(self):
+        self._grace = 0
         self._set_available(False)
+        return GLib.SOURCE_REMOVE
+
+    def _cancel_grace(self):
+        if self._grace:
+            GLib.source_remove(self._grace)
+            self._grace = 0
 
     def _set_available(self, available):
         if available != self.available:

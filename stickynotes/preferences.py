@@ -3,6 +3,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from gi.repository import Adw, GLib
@@ -48,32 +49,57 @@ class PreferencesDialog(Adw.PreferencesDialog):
         background = Adw.PreferencesGroup(title="Background")
         self.tray_row = Adw.SwitchRow(title="Keep running in the tray when closed",
                                       active=app.prefs.close_to_tray)
-        self._tray_subtitle()
-        self.tray_row.connect("notify::active",
-                              lambda row, _p: app.set_close_to_tray(row.get_active()))
+        self.refresh_tray()
+        self._connect(self.tray_row, app.set_close_to_tray, lambda: app.prefs.close_to_tray,
+                      "The choice applies now but could not be saved for next time")
         background.add(self.tray_row)
 
-        autostart = Adw.SwitchRow(title="Start at login",
-                                  subtitle="Reopen your notes when you sign in",
-                                  active=integration.autostart_enabled())
-        autostart.connect("notify::active",
-                          lambda row, _p: integration.set_autostart(row.get_active()))
-        background.add(autostart)
+        self.autostart_row = Adw.SwitchRow(title="Start at login",
+                                           subtitle="Reopen your notes when you sign in",
+                                           active=integration.autostart_enabled())
+        self._connect(self.autostart_row, self._set_autostart, integration.autostart_enabled,
+                      "Could not change the login item")
+        background.add(self.autostart_row)
         page.add(background)
 
         keys = Adw.PreferencesGroup(title="Keyboard")
-        shortcut = Adw.SwitchRow(title="New note from anywhere",
-                                 subtitle=f"{integration.SHORTCUT_LABEL} creates a note, even when "
-                                          "Sticky Notes is not focused",
-                                 active=integration.shortcut_enabled(),
-                                 sensitive=integration.shortcut_supported())
-        shortcut.connect("notify::active",
-                         lambda row, _p: integration.set_shortcut(row.get_active()))
-        keys.add(shortcut)
+        self.shortcut_row = Adw.SwitchRow(
+            title="New note from anywhere",
+            subtitle=f"{integration.SHORTCUT_LABEL} creates a note, even when "
+                     "Sticky Notes is not focused",
+            active=integration.shortcut_enabled(),
+            sensitive=integration.shortcut_supported())
+        self._connect(self.shortcut_row, integration.set_shortcut, integration.shortcut_enabled,
+                      "Could not change the keyboard shortcut")
+        keys.add(self.shortcut_row)
         page.add(keys)
         self.add(page)
 
-    def _tray_subtitle(self):
+    def _connect(self, row, apply, current, error):
+        """Run apply(active) on toggle. When it fails, show error and put the
+        switch back to current(), so it never claims a state that is not real."""
+        def on_active(row, _pspec):
+            try:
+                ok = apply(row.get_active()) is not False
+            except (OSError, GLib.Error) as err:
+                print(f"dusk-sticky-notes: {error}: {err}", file=sys.stderr)
+                ok = False
+            if ok:
+                return
+            self.add_toast(Adw.Toast(title=error))
+            actual = current()
+            if row.get_active() != actual:
+                row.handler_block(handler)
+                row.set_active(actual)
+                row.handler_unblock(handler)
+        handler = row.connect("notify::active", on_active)
+
+    @staticmethod
+    def _set_autostart(enabled):
+        integration.set_autostart(enabled)
+        return integration.autostart_enabled() == enabled
+
+    def refresh_tray(self):
         if self.app.tray is None or not self.app.tray.available:
             self.tray_row.set_subtitle("No tray in this session: closing the last window quits")
         else:

@@ -55,6 +55,7 @@ class StickyApp(Adw.Application):
         self.prefs = None
         self.tray = None
         self._held = False
+        self._prefs_dialog = None
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -97,7 +98,7 @@ class StickyApp(Adw.Application):
         self.prefs = Preferences().load()
         self.tray = Tray(self, APP_ID, "Sticky Notes",
                          icon_theme_path=str(source_icons) if from_checkout else "",
-                         on_availability=lambda _ok: self._update_hold())
+                         on_availability=self._on_tray_availability)
         # Decide the hold now: with --restore and no open notes, an async check
         # would come too late and the app would exit before the icon appears.
         self._update_hold(self.tray.start())
@@ -115,10 +116,21 @@ class StickyApp(Adw.Application):
             self._held = False
             self.release()
 
-    def set_close_to_tray(self, enabled):
-        self.prefs.values["close_to_tray"] = enabled
-        self.prefs.save()
+    def _on_tray_availability(self, _available):
         self._update_hold()
+        if self._prefs_dialog is not None:
+            self._prefs_dialog.refresh_tray()
+
+    def set_close_to_tray(self, enabled):
+        """Apply now; return False when the choice could not be saved for next time."""
+        self.prefs.values["close_to_tray"] = enabled
+        self._update_hold()
+        try:
+            self.prefs.save()
+        except OSError as err:
+            print(f"dusk-sticky-notes: preferences not saved: {err}", file=sys.stderr)
+            return False
+        return True
 
     def toggle_list(self):
         if self.hub is not None and self.hub.is_active():
@@ -127,7 +139,24 @@ class StickyApp(Adw.Application):
             self.show_list()
 
     def show_preferences(self):
-        PreferencesDialog(self).present(self.get_active_window())
+        if self._prefs_dialog is not None:
+            root = self._prefs_dialog.get_root()
+            if root is not None:
+                root.present()
+            return
+        # From the tray there may be no window: give the dialog the notes list
+        # as its parent, which also keeps the app alive while it is open.
+        parent = self.get_active_window()
+        if parent is None:
+            self.show_list()
+            parent = self.hub
+        dialog = PreferencesDialog(self)
+        dialog.connect("closed", self._on_prefs_closed)
+        self._prefs_dialog = dialog
+        dialog.present(parent)
+
+    def _on_prefs_closed(self, _dialog):
+        self._prefs_dialog = None
 
     def _load_palette(self, styles, *_):
         self._palette_css.load_from_string(build_css(styles.get_dark()))

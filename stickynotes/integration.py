@@ -35,6 +35,7 @@ def launcher_path():
 
 
 def _desktop_exec_quote(arg):
+    arg = arg.replace("%", "%%")  # a bare % starts a field code such as %f
     if not any(c in arg for c in ' \t\n"\'\\><~|&;$*?#()`'):
         return arg
     escaped = arg.replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
