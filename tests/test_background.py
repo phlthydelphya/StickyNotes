@@ -31,7 +31,8 @@ def test_menu_layout_shape_and_items():
     assert root_id == 0 and root_props["children-display"] == "submenu"
     assert [c[0] for c in children] == [iid for iid, *_ in MENU_ITEMS]
     labels = [label for _iid, label, _cb in MENU_ITEMS if label]
-    assert labels == ["New Note", "Show Notes List", "Preferences", "Quit"]
+    assert labels == ["New Note", "New Note from Screenshot", "Show Notes List", "Preferences",
+                      "Quit"]
     assert item_properties(4)["type"].get_string() == "separator"
     assert item_properties(99) is None
 

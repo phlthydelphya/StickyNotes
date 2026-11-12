@@ -85,6 +85,7 @@ class StickyApp(Adw.Application):
             self.store.gc_images()
 
         self._add_action("new-note", lambda *_: self.new_note())
+        self._add_action("new-screenshot-note", lambda *_: self.new_screenshot_note())
         self._add_action("show-list", lambda *_: self.show_list())
         self._add_action("quit", lambda *_: self.quit_saving())
         self._add_action("about", lambda *_: self.show_about())
@@ -257,6 +258,17 @@ class StickyApp(Adw.Application):
             return
         note = self.store.create()
         self.open_note(note.id)
+
+    def new_screenshot_note(self):
+        """New note holding a screenshot; dropped again if the capture is cancelled."""
+        if self.store.read_only:
+            self._show_newer()
+            return
+        note = self.store.create()
+        self.open_note(note.id)
+        win = self.note_windows.get(note.id)
+        if win is not None:
+            win.take_screenshot(discard_if_empty=True)
 
     def open_note(self, note_id):
         win = self.note_windows.get(note_id)

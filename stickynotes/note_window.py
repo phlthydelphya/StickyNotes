@@ -2,10 +2,12 @@
 """A single floating sticky note."""
 
 import shutil
+import sys
 from pathlib import Path
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
+from .capture import CANCELLED, OK, ScreenshotRequest
 from .palette import COLORS, label
 from .richtext import TAGS, RichEditor
 
@@ -35,6 +37,7 @@ class NoteWindow(Adw.Window):
         self.note = note
         self.deleted = False
         self._content_source = 0
+        self._screenshot = None
         self.add_css_class("sticky")
         self.add_css_class(note.color)
 
@@ -52,7 +55,8 @@ class NoteWindow(Adw.Window):
                                                hscrollbar_policy=Gtk.PolicyType.NEVER))
         toolbar.add_bottom_bar(self._build_format_bar())
         self.toolbar = toolbar
-        self.set_content(toolbar)
+        self.toasts = Adw.ToastOverlay(child=toolbar)
+        self.set_content(self.toasts)
 
         self._install_actions()
         self.editor.connect("content-changed", self._on_content_changed)
@@ -130,6 +134,10 @@ class NoteWindow(Adw.Window):
                            focus_on_click=False, action_name="win.insert-image")
         image.add_css_class("flat")
         bar.append(image)
+        shot = Gtk.Button(icon_name="camera-photo-symbolic", tooltip_text="Add screenshot",
+                          focus_on_click=False, action_name="win.screenshot")
+        shot.add_css_class("flat")
+        bar.append(shot)
         return bar
 
     def _install_actions(self):
@@ -146,7 +154,8 @@ class NoteWindow(Adw.Window):
         group.add_action(self.list_action)
         for name, cb in (("bullets", lambda *_: self.editor.toggle_bullets()),
                          ("delete", lambda *_: self.confirm_delete()),
-                         ("insert-image", lambda *_: self._choose_image())):
+                         ("insert-image", lambda *_: self._choose_image()),
+                         ("screenshot", lambda *_: self.take_screenshot())):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", cb)
             group.add_action(act)
@@ -238,9 +247,11 @@ class NoteWindow(Adw.Window):
         self.deleted = True
         self.close()
 
+    def _is_blank(self):
+        return not any(seg.get("t", "").strip() or "img" in seg for seg in self.editor.dump())
+
     def confirm_delete(self):
-        content = self.editor.dump()
-        if not any(seg.get("t", "").strip() or "img" in seg for seg in content):
+        if self._is_blank():
             self.close_deleted()
             self.store.delete(self.note.id)
             return
@@ -298,3 +309,41 @@ class NoteWindow(Adw.Window):
         if not texture.save_to_png(str(self.store.image_path(name))):
             return
         self.editor.insert_image_at_cursor(name)
+
+    # --- screenshots ----------------------------------------------------------------
+    def take_screenshot(self, discard_if_empty=False):
+        """Open the desktop's screenshot UI and insert the result at the cursor.
+
+        discard_if_empty: close the note when the capture gives nothing and the
+        note is still empty (a note made just for this screenshot)."""
+        if self._screenshot is not None:
+            return
+        self._screenshot = ScreenshotRequest(
+            lambda status, uri: self._on_screenshot(status, uri, discard_if_empty))
+        self._screenshot.start()
+
+    def _on_screenshot(self, status, uri, discard_if_empty):
+        self._screenshot = None
+        if self.deleted or self.app.note_windows.get(self.note.id) is not self:
+            return  # note closed while the screenshot UI was open
+        if status == OK and self._add_screenshot(uri):
+            self.present()
+            return
+        if status != CANCELLED:
+            self.toasts.add_toast(Adw.Toast(title="Screenshot could not be added"))
+        elif discard_if_empty and self._is_blank():
+            self.close()
+
+    def _add_screenshot(self, uri):
+        """Copy the portal's file into the note; the user's own copy stays where it is."""
+        src = Gio.File.new_for_uri(uri)
+        path = src.get_path()
+        name = self.store.new_image_name(Path(path).suffix if path else ".png")
+        try:
+            src.copy(Gio.File.new_for_path(str(self.store.image_path(name))),
+                     Gio.FileCopyFlags.NONE, None, None, None)
+        except GLib.Error as err:
+            print(f"dusk-sticky-notes: screenshot copy failed: {err.message}", file=sys.stderr)
+            return False
+        self.editor.insert_image_at_cursor(name)
+        return True

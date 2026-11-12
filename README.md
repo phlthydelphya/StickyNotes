@@ -15,10 +15,15 @@ Python + PyGObject, GTK 4 + libadwaita.
 
 - One window per note, plus a notes list with search (type to search, Ctrl+F).
 - Seven colors (yellow, green, pink, purple, blue, gray, charcoal), light and dark palettes.
-- Bold, italic, underline, strikethrough, bullet lists, images (file picker or pasted screenshot).
+- Bold, italic, underline, strikethrough, images (file picker or pasted).
+- Lists from the format bar: bullets, numbered (renumbers itself), checklist (click a box to tick).
+- Screenshots: the camera button opens GNOME's screenshot UI (area, window or screen) through
+  the xdg-desktop-portal and adds the shot to the note; the tray's "New Note from Screenshot"
+  does the same in a new note. GNOME keeps its own copy in ~/Pictures/Screenshots.
 - Autosave; open notes reopen on next launch; an empty note is discarded when closed.
 - An inactive note hides its controls and shows only the colored sheet.
-- Tray icon (monochrome, follows the panel color): New Note, Show Notes List, Preferences, Quit.
+- Tray icon (monochrome, follows the panel color): New Note, New Note from Screenshot,
+  Show Notes List, Preferences, Quit.
   Left click toggles the notes list, middle click makes a new note.
 - Preferences (Ctrl+,): keep running in the tray when closed (on by default; ignored when the
   session has no tray, so the app never runs invisibly), start at login, and a global

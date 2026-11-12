@@ -96,6 +96,7 @@ MENU_XML = """
 # id -> (label, callback name on the app) ; None label = separator
 MENU_ITEMS = (
     (1, "New Note", "new_note"),
+    (6, "New Note from Screenshot", "new_screenshot_note"),
     (2, "Show Notes List", "toggle_list"),
     (3, "Preferences", "show_preferences"),
     (4, None, None),
