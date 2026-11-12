@@ -272,3 +272,18 @@ def test_newer_dialog_quits_without_saving(tmp_path, monkeypatch):
     assert quit_events == ['quit']
     assert store.file.read_bytes() == before
     assert not list(tmp_path.glob('notes.json.unsaved-*'))
+
+
+def test_recovery_files_preserved_and_disclosed(tmp_path, monkeypatch):
+    store = populated(tmp_path, {'version': 1, 'notes': []})
+    recovery = tmp_path / 'notes.json.unsaved-123'
+    recovery.write_text('{"version": 1, "notes": []}')
+    store.load()
+    store.gc_images()
+    assert store.image_path('keep.png').exists()
+    assert store.recovery_files() == [recovery]
+    monkeypatch.setattr(app_module.Adw, 'AlertDialog', Dialog)
+    hub = SimpleNamespace(store=store)
+    HubWindow._show_recovery_notice(hub)
+    assert str(recovery) in Dialog.instances[-1].kwargs['body']
+    assert recovery.read_text() == '{"version": 1, "notes": []}'

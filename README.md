@@ -37,7 +37,8 @@ are left untouched. Newer formats open a warning and exit without modifying note
 
 Pending or failed saves show **Not saved** in the notes-list subtitle. A failed
 Quit offers Retry, Cancel, or Quit Anyway. On shutdown, failed normal saves are
-written to `notes.json.unsaved-<time>` when possible. These are recovery files;
+written to `notes.json.unsaved-<time>` when possible. The notes list shows a recovery notice with their paths, and image cleanup stays
+disabled while recovery files exist. These are recovery files;
 keep a backup of both files before manually recovering their contents. If both
 writes fail, the process logs both errors and exits with status 1.
 

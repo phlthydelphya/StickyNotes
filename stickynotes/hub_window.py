@@ -60,6 +60,11 @@ class HubWindow(Adw.ApplicationWindow):
         self.stack.add_named(self.no_results, "no-results")
 
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        recovery_files = self.store.recovery_files()
+        if recovery_files:
+            notice = Adw.Banner(title="Recovered notes need your attention", button_label="Details", revealed=True)
+            notice.connect("button-clicked", self._show_recovery_notice)
+            body.append(notice)
         body.append(self.search)
         self.stack.set_vexpand(True)
         body.append(self.stack)
@@ -76,6 +81,16 @@ class HubWindow(Adw.ApplicationWindow):
 
         self.store.connect(lambda _id: self._schedule_rebuild())
         self._rebuild()
+
+    def _show_recovery_notice(self, *_):
+        paths = "\n".join(str(path) for path in self.store.recovery_files())
+        dialog = Adw.AlertDialog(
+            heading="Unsaved notes were preserved",
+            body="A previous save failed. Recovery files may contain newer edits. "
+                 "They have not been merged into your notes. Keep backups before recovering them.\n\n" + paths)
+        dialog.add_response("close", "Close")
+        dialog.set_close_response("close")
+        dialog.present(self)
 
     def _update_save_state(self):
         self.window_title.set_subtitle("Not saved" if self.store.unsaved else "")

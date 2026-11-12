@@ -139,6 +139,10 @@ class NoteStore:
         self.load_state = LoadState.OK
         return self.load_state
 
+    def recovery_files(self):
+        """Recovery payloads are never imported or deleted automatically."""
+        return sorted(self.root.glob("notes.json.unsaved-*"))
+
     def payload(self):
         return json.dumps({"version": 1, "notes": [n.to_dict() for n in self.notes.values()]},
                           ensure_ascii=False, indent=1)
@@ -260,7 +264,7 @@ class NoteStore:
 
     def gc_images(self):
         """Remove image files that no note references (deleted from a note's text)."""
-        if self.load_state is not LoadState.OK or self.read_only or self.unsaved:
+        if self.load_state is not LoadState.OK or self.read_only or self.unsaved or self.recovery_files():
             return
         used = {name for n in self.notes.values() for name in n.images()}
         if not self.images_dir.is_dir():
