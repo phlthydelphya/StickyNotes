@@ -1,17 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Note model and on-disk persistence (JSON + image files in the user data dir)."""
 
+import math
 import json
 import os
 import sys
 import time
 import uuid
 from pathlib import Path
+from enum import Enum
 
 from gi.repository import GLib
 
 from .palette import COLORS, DEFAULT_COLOR
 
 SAVE_DELAY_MS = 400
+
+
+class LoadState(Enum):
+    MISSING = "missing"
+    OK = "ok"
+    CORRUPT = "corrupt"
+    NEWER = "newer"
+
+
+def valid_image_name(name):
+    return isinstance(name, str) and bool(name) and name != "." and "/" not in name and ".." not in name
+
+
+def validate(data):
+    if not isinstance(data, dict) or type(data.get("version")) is not int:
+        raise ValueError("Invalid version")
+    if data["version"] != 1 or not isinstance(data.get("notes"), list):
+        raise ValueError("Invalid notes schema")
+    ids = set()
+    for note in data["notes"]:
+        if not isinstance(note, dict) or not isinstance(note.get("id"), str) or not note["id"]:
+            raise ValueError("Invalid note id")
+        if note["id"] in ids:
+            raise ValueError("Duplicate note id")
+        ids.add(note["id"])
+        if not isinstance(note.get("content"), list):
+            raise ValueError("Invalid content")
+        for seg in note["content"]:
+            if not isinstance(seg, dict) or (("t" in seg) == ("img" in seg)):
+                raise ValueError("Invalid segment")
+            if "img" in seg:
+                if not valid_image_name(seg["img"]):
+                    raise ValueError("Invalid image name")
+            elif not isinstance(seg["t"], str) or not isinstance(seg.get("s", []), list):
+                raise ValueError("Invalid text segment")
+        for key in ("created", "modified"):
+            if key in note and (type(note[key]) not in (int, float) or not math.isfinite(note[key])):
+                raise ValueError("Invalid timestamp")
+        for key in ("width", "height"):
+            if key in note and (type(note[key]) is not int or not 1 <= note[key] <= 32767):
+                raise ValueError("Invalid size")
+        if "open" in note and type(note["open"]) is not bool:
+            raise ValueError("Invalid open state")
 
 
 def default_root():
@@ -62,38 +108,80 @@ class NoteStore:
         self.notes = {}
         self._listeners = []
         self._save_source = 0
+        self.read_only = False
+        self.load_state = LoadState.MISSING
+        self.last_error = None
+        self.unsaved = False
+        self._save_listeners = []
 
     # --- persistence -------------------------------------------------------
     def load(self):
-        """Read notes.json. Returns True only when the file existed and parsed."""
+        """Validate before exposing notes or permitting image collection."""
         self.images_dir.mkdir(parents=True, exist_ok=True)
+        self.notes = {}
+        self.read_only = False
+        self.load_state = LoadState.MISSING
         if not self.file.exists():
-            return False
+            return self.load_state
         try:
             data = json.loads(self.file.read_text(encoding="utf-8"))
-            notes = [Note.from_dict(d) for d in data.get("notes", [])]
+            if isinstance(data, dict) and type(data.get("version")) is int and data["version"] > 1:
+                self.read_only = True
+                self.load_state = LoadState.NEWER
+                return self.load_state
+            validate(data)
+            notes = [Note.from_dict(d) for d in data["notes"]]
         except (OSError, ValueError, AttributeError, TypeError):
-            # Keep the unreadable file for recovery instead of overwriting it.
-            self.file.rename(self.file.with_name(f"notes.json.corrupt-{int(time.time())}"))
-            return False
+            self.file.rename(self.file.with_name(f"notes.json.corrupt-{time.time_ns()}"))
+            self.load_state = LoadState.CORRUPT
+            return self.load_state
         self.notes = {n.id: n for n in notes}
-        return True
+        self.load_state = LoadState.OK
+        return self.load_state
+
+    def payload(self):
+        return json.dumps({"version": 1, "notes": [n.to_dict() for n in self.notes.values()]},
+                          ensure_ascii=False, indent=1)
+
+    def save_emergency(self):
+        if self.read_only:
+            raise OSError("Notes were saved by a newer version")
+        self.root.mkdir(parents=True, exist_ok=True)
+        path = self.file.with_name(f"notes.json.unsaved-{time.time_ns()}")
+        with path.open("x", encoding="utf-8") as f:
+            f.write(self.payload())
+            f.flush()
+            os.fsync(f.fileno())
+        return path
+
+    def connect_save_state(self, callback):
+        self._save_listeners.append(callback)
+
+    def _save_state(self, unsaved, error=None):
+        self.unsaved, self.last_error = unsaved, error
+        for callback in self._save_listeners:
+            callback()
 
     def save_now(self):
+        if self.read_only:
+            raise OSError("Notes were saved by a newer version")
         if self._save_source:
             GLib.source_remove(self._save_source)
             self._save_source = 0
         self.root.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps({"version": 1, "notes": [n.to_dict() for n in self.notes.values()]},
-                             ensure_ascii=False, indent=1)
+        payload = self.payload()
         tmp = self.file.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, self.file)
+        self._save_state(False)
 
     def schedule_save(self):
+        if self.read_only:
+            return
+        self._save_state(True, self.last_error)
         if not self._save_source:
             self._save_source = GLib.timeout_add(SAVE_DELAY_MS, self._on_save_timeout)
 
@@ -104,7 +192,9 @@ class NoteStore:
             return True
         except OSError as err:
             print(f"dusk-sticky-notes: could not save notes: {err}", file=sys.stderr)
-            self._save_source = GLib.timeout_add_seconds(5, self._on_save_timeout)
+            self._save_state(True, str(err))
+            if not self.read_only and not self._save_source:
+                self._save_source = GLib.timeout_add_seconds(5, self._on_save_timeout)
             return False
 
     def _on_save_timeout(self):
@@ -153,6 +243,8 @@ class NoteStore:
 
     # --- images -------------------------------------------------------------
     def image_path(self, name):
+        if not valid_image_name(name):
+            raise ValueError("Invalid image name")
         return self.images_dir / name
 
     def new_image_name(self, ext):
@@ -168,6 +260,8 @@ class NoteStore:
 
     def gc_images(self):
         """Remove image files that no note references (deleted from a note's text)."""
+        if self.load_state is not LoadState.OK or self.read_only or self.unsaved:
+            return
         used = {name for n in self.notes.values() for name in n.images()}
         if not self.images_dir.is_dir():
             return

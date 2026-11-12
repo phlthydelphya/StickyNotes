@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Note colors. One table drives the note windows, the swatches and the list cards."""
 
 # name: (label, light body, light header, dark body, dark header, accent strip)

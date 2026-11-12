@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk  # noqa: E402
 
 from stickynotes.richtext import RichEditor, install_tags, serialize, deserialize  # noqa: E402
-from stickynotes.store import Note, NoteStore  # noqa: E402
+from stickynotes.store import LoadState, Note, NoteStore  # noqa: E402
 
 
 class StoreTest(unittest.TestCase):
@@ -42,11 +43,11 @@ class StoreTest(unittest.TestCase):
     def test_load_reports_failure_so_images_are_not_collected(self):
         with tempfile.TemporaryDirectory() as d:
             store = NoteStore(d)
-            self.assertFalse(store.load())  # missing file
+            self.assertEqual(store.load(), LoadState.MISSING)  # missing file
             Path(d, "notes.json").write_text("{not json")
-            self.assertFalse(NoteStore(d).load())  # corrupt file
+            self.assertEqual(NoteStore(d).load(), LoadState.CORRUPT)  # corrupt file
             store.save_now()
-            self.assertTrue(NoteStore(d).load())
+            self.assertEqual(NoteStore(d).load(), LoadState.OK)
 
     def test_delete_commits_before_removing_images(self):
         with tempfile.TemporaryDirectory() as d:
@@ -69,6 +70,8 @@ class StoreTest(unittest.TestCase):
             note.content = [{"img": "keep.png"}]
             store.image_path("keep.png").write_bytes(b"x")
             store.image_path("orphan.png").write_bytes(b"x")
+            store.save_now()
+            store.load()
             store.gc_images()
             self.assertTrue(store.image_path("keep.png").exists())
             self.assertFalse(store.image_path("orphan.png").exists())

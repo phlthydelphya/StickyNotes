@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Application: owns the store, the notes list and the open note windows."""
 
 import signal
@@ -14,7 +15,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
 from .palette import build_css  # noqa: E402
-from .store import NoteStore  # noqa: E402
+from .store import LoadState, NoteStore  # noqa: E402
 
 APP_ID = "org.duskos.StickyNotes"
 STYLE = Path(__file__).with_name("style.css")
@@ -43,6 +44,10 @@ class StickyApp(Adw.Application):
         self.hub = None
         self.note_windows = {}
         self._restored = False
+        self.exit_status = 0
+        self._shutdown_saved = False
+        self._save_dialog = None
+        self._newer_window = None
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -64,7 +69,7 @@ class StickyApp(Adw.Application):
         self.store = NoteStore()
         # Only collect orphan images against a notes.json that really loaded:
         # after a corrupt or missing file, every image would look orphaned.
-        if self.store.load():
+        if self.store.load() is LoadState.OK:
             self.store.gc_images()
 
         self._add_action("new-note", lambda *_: self.new_note())
@@ -94,6 +99,9 @@ class StickyApp(Adw.Application):
                     self.open_note(note.id)
 
     def do_command_line(self, command_line):
+        if self.store.read_only:
+            self._show_newer()
+            return 0
         options = command_line.get_options_dict()
         if options.contains("new-note"):
             self._restore()
@@ -106,17 +114,36 @@ class StickyApp(Adw.Application):
         return 0
 
     def do_activate(self):
+        if self.store.read_only:
+            self._show_newer()
+            return
         self._restore()
         self.show_list()
 
     def do_shutdown(self):
         try:
-            self._flush_all()
+            self._save_for_shutdown()
         finally:
             Adw.Application.do_shutdown(self)
 
     # --- windows -------------------------------------------------------------
+    def _show_newer(self):
+        if self._newer_window is not None:
+            self._newer_window.present()
+            return
+        self._newer_window = Adw.ApplicationWindow(application=self, title="Sticky Notes")
+        self._newer_window.present()
+        dialog = Adw.AlertDialog(heading="Notes were saved by a newer version",
+                                 body="Your notes have not been changed. Open them with a newer version of Sticky Notes.")
+        dialog.add_response("close", "Close")
+        dialog.set_close_response("close")
+        dialog.connect("response", lambda *_: self.quit())
+        dialog.present(self._newer_window)
+
     def show_list(self):
+        if self.store.read_only:
+            self._show_newer()
+            return
         if self.hub is None:
             self.hub = HubWindow(self)
             self.hub.connect("close-request", self._on_hub_closed)
@@ -127,6 +154,9 @@ class StickyApp(Adw.Application):
         return False
 
     def new_note(self):
+        if self.store.read_only:
+            self._show_newer()
+            return
         note = self.store.create()
         self.open_note(note.id)
 
@@ -166,20 +196,64 @@ class StickyApp(Adw.Application):
 
     # --- shutdown --------------------------------------------------------------
     def _flush_all(self):
-        """Save every open note without marking it closed, so it reopens next launch."""
+        """Save every open note; propagate failure to the caller."""
+        if self.store is None or self.store.read_only:
+            return True
         for win in list(self.note_windows.values()):
             win.flush()
-        if self.store is not None:
-            self.store.try_save()
+        return self.store.try_save()
 
     def quit_saving(self):
-        self._flush_all()
-        self.quit()
+        if self._flush_all():
+            self._shutdown_saved = True
+            self.quit()
+            return
+        if self._save_dialog is not None:
+            return
+        dialog = Adw.AlertDialog(heading=f"Notes could not be saved: {self.store.last_error}")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("retry", "Retry")
+        dialog.add_response("quit", "Quit Anyway")
+        dialog.set_response_appearance("quit", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("retry")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._on_save_response)
+        self._save_dialog = dialog
+        if self.get_active_window() is None:
+            self.show_list()
+        dialog.present(self.get_active_window())
+
+    def _on_save_response(self, _dialog, response):
+        self._save_dialog = None
+        if response == "retry":
+            self.quit_saving()
+        elif response == "quit":
+            self._save_for_shutdown()
+            self.quit()
+
+    def _save_for_shutdown(self):
+        if self._shutdown_saved:
+            return
+        self._shutdown_saved = True
+        if self._flush_all():
+            return
+        original_error = self.store.last_error
+        try:
+            path = self.store.save_emergency()
+            print(f"dusk-sticky-notes: normal save failed ({original_error}); recovery saved to {path}",
+                  file=sys.stderr)
+        except OSError as err:
+            print(f"dusk-sticky-notes: save failed: {original_error}; recovery save failed: {err}",
+                  file=sys.stderr)
+            self.exit_status = 1
 
     def _on_sigterm(self):
-        self.quit_saving()
+        self._save_for_shutdown()
+        self.quit()
         return GLib.SOURCE_REMOVE
 
 
 def main():
-    return StickyApp().run(sys.argv)
+    app = StickyApp()
+    result = app.run(sys.argv)
+    return app.exit_status or result

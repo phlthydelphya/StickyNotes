@@ -32,8 +32,21 @@ Python + PyGObject, GTK 4 + libadwaita.
 ## Data
 
 `$XDG_DATA_HOME/dusk-sticky-notes/notes.json` plus `images/`. Writes are atomic.
-An unreadable `notes.json` is renamed to `notes.json.corrupt-<time>`, never overwritten.
+Invalid version-1 data is preserved as `notes.json.corrupt-<time>`; its images
+are left untouched. Newer formats open a warning and exit without modifying notes.
+
+Pending or failed saves show **Not saved** in the notes-list subtitle. A failed
+Quit offers Retry, Cancel, or Quit Anyway. On shutdown, failed normal saves are
+written to `notes.json.unsaved-<time>` when possible. These are recovery files;
+keep a backup of both files before manually recovering their contents. If both
+writes fail, the process logs both errors and exits with status 1.
 
 ## Tests
 
     python3 -m pytest -q tests
+
+## License
+
+Dusk Sticky Notes is licensed under the GNU General Public License,
+version 3 or (at your option) any later version (`GPL-3.0-or-later`).
+See [LICENSE](LICENSE) for the full license text.

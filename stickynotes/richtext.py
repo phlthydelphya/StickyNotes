@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Rich text editing on a GtkTextView: inline formatting, bullets, images, (de)serialization."""
 
 from gi.repository import Gdk, GObject, Gtk, Pango

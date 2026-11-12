@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The notes list: search and browse every note."""
 
 import datetime
@@ -26,7 +27,10 @@ class HubWindow(Adw.ApplicationWindow):
         self.store = app.store
         self._rebuild_source = 0
 
-        header = Adw.HeaderBar(title_widget=Adw.WindowTitle(title="Sticky Notes"))
+        self.window_title = Adw.WindowTitle(title="Sticky Notes")
+        self.store.connect_save_state(self._update_save_state)
+        self._update_save_state()
+        header = Adw.HeaderBar(title_widget=self.window_title)
         header.pack_start(Gtk.Button(icon_name="list-add-symbolic", tooltip_text="New note (Ctrl+N)",
                                      action_name="app.new-note"))
 
@@ -72,6 +76,9 @@ class HubWindow(Adw.ApplicationWindow):
 
         self.store.connect(lambda _id: self._schedule_rebuild())
         self._rebuild()
+
+    def _update_save_state(self):
+        self.window_title.set_subtitle("Not saved" if self.store.unsaved else "")
 
     def _focus_search(self, *_):
         self.search.grab_focus()
