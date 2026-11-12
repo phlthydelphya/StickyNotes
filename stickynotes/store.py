@@ -106,13 +106,14 @@ class NoteStore:
         self.images_dir = self.root / "images"
         self.file = self.root / "notes.json"
         self.notes = {}
-        self._listeners = []
+        self._listeners = {}
+        self._next_listener_id = 0
         self._save_source = 0
         self.read_only = False
         self.load_state = LoadState.MISSING
         self.last_error = None
         self.unsaved = False
-        self._save_listeners = []
+        self._save_listeners = {}
 
     # --- persistence -------------------------------------------------------
     def load(self):
@@ -159,12 +160,13 @@ class NoteStore:
         return path
 
     def connect_save_state(self, callback):
-        self._save_listeners.append(callback)
+        return self._subscribe(self._save_listeners, callback)
 
     def _save_state(self, unsaved, error=None):
         self.unsaved, self.last_error = unsaved, error
-        for callback in self._save_listeners:
-            callback()
+        for listener_id, callback in list(self._save_listeners.items()):
+            if listener_id in self._save_listeners:
+                callback()
 
     def save_now(self):
         if self.read_only:
@@ -207,12 +209,23 @@ class NoteStore:
         return GLib.SOURCE_REMOVE
 
     # --- change notification ----------------------------------------------
+    def _subscribe(self, listeners, callback):
+        self._next_listener_id += 1
+        listeners[self._next_listener_id] = callback
+        return self._next_listener_id
+
     def connect(self, callback):
-        self._listeners.append(callback)
+        return self._subscribe(self._listeners, callback)
+
+    def disconnect(self, listener_id):
+        """Disconnect either subscription kind; repeated/unknown IDs are harmless."""
+        self._listeners.pop(listener_id, None)
+        self._save_listeners.pop(listener_id, None)
 
     def _notify(self, note_id):
-        for cb in list(self._listeners):
-            cb(note_id)
+        for listener_id, cb in list(self._listeners.items()):
+            if listener_id in self._listeners:
+                cb(note_id)
 
     # --- operations --------------------------------------------------------
     def get(self, note_id):

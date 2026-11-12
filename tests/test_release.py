@@ -171,7 +171,7 @@ def test_main_returns_failure(monkeypatch):
 def test_unsaved_title(tmp_path, timers):
     store = NoteStore(tmp_path)
     subtitles = []
-    hub = SimpleNamespace(store=store, window_title=SimpleNamespace(set_subtitle=subtitles.append))
+    hub = SimpleNamespace(store=store, _closed=False, window_title=SimpleNamespace(set_subtitle=subtitles.append))
     store.connect_save_state(lambda: HubWindow._update_save_state(hub))
     store.create()
     assert subtitles[-1] == 'Not saved'

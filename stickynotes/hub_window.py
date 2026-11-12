@@ -26,9 +26,12 @@ class HubWindow(Adw.ApplicationWindow):
         self.app = app
         self.store = app.store
         self._rebuild_source = 0
+        self._menu_drop_source = 0
+        self._closed = False
+        self.connect("close-request", self._on_close_request)
 
         self.window_title = Adw.WindowTitle(title="Sticky Notes")
-        self.store.connect_save_state(self._update_save_state)
+        self._save_listener = self.store.connect_save_state(self._update_save_state)
         self._update_save_state()
         header = Adw.HeaderBar(title_widget=self.window_title)
         header.pack_start(Gtk.Button(icon_name="list-add-symbolic", tooltip_text="New note (Ctrl+N)",
@@ -79,7 +82,7 @@ class HubWindow(Adw.ApplicationWindow):
                                        action=Gtk.CallbackAction.new(self._focus_search)))
         self.add_controller(find)
 
-        self.store.connect(lambda _id: self._schedule_rebuild())
+        self._note_listener = self.store.connect(lambda _id: self._schedule_rebuild())
         self._rebuild()
 
     def _show_recovery_notice(self, *_):
@@ -92,7 +95,28 @@ class HubWindow(Adw.ApplicationWindow):
         dialog.set_close_response("close")
         dialog.present(self)
 
+    def _on_close_request(self, *_):
+        if self._closed:
+            return False
+        self._closed = True
+        self.store.disconnect(self._note_listener)
+        self.store.disconnect(self._save_listener)
+        for name in ("_rebuild_source", "_menu_drop_source"):
+            source = getattr(self, name)
+            if source:
+                GLib.source_remove(source)
+                setattr(self, name, 0)
+        if self.menu_popover is not None:
+            popover = self.menu_popover
+            self.menu_popover = None
+            popover.popdown()
+            if popover.get_parent() is not None:
+                popover.unparent()
+        return False
+
     def _update_save_state(self):
+        if self._closed:
+            return
         self.window_title.set_subtitle("Not saved" if self.store.unsaved else "")
 
     def _focus_search(self, *_):
@@ -100,15 +124,18 @@ class HubWindow(Adw.ApplicationWindow):
         return True
 
     def _schedule_rebuild(self):
-        if not self._rebuild_source:
+        if not self._closed and not self._rebuild_source:
             self._rebuild_source = GLib.timeout_add(REBUILD_DELAY_MS, self._on_rebuild_timeout)
 
     def _on_rebuild_timeout(self):
         self._rebuild_source = 0
-        self._rebuild()
+        if not self._closed:
+            self._rebuild()
         return GLib.SOURCE_REMOVE
 
     def _rebuild(self):
+        if self._closed:
+            return
         if self.menu_popover is not None:
             self._schedule_rebuild()  # try again once the menu closes
             return
@@ -176,13 +203,17 @@ class HubWindow(Adw.ApplicationWindow):
         popover.popup()
 
     def _on_menu_closed(self, popover):
+        if self._closed:
+            return
         # Unparent after the chosen action has run.
         def drop():
-            popover.unparent()
+            self._menu_drop_source = 0
+            if popover.get_parent() is not None:
+                popover.unparent()
             if self.menu_popover is popover:
                 self.menu_popover = None
             return GLib.SOURCE_REMOVE
-        GLib.idle_add(drop)
+        self._menu_drop_source = GLib.idle_add(drop)
 
     def _on_row_activated(self, _list, row):
         self.app.open_note(row.note_id)
