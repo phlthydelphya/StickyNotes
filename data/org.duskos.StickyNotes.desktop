@@ -1,0 +1,16 @@
+[Desktop Entry]
+Name=Sticky Notes
+Comment=Quick colored notes on your desktop
+Exec=dusk-sticky-notes
+Icon=org.duskos.StickyNotes
+Terminal=false
+Type=Application
+Categories=Utility;GTK;
+Keywords=note;notes;sticky;post-it;memo;
+StartupNotify=true
+DBusActivatable=false
+Actions=new-note;
+
+[Desktop Action new-note]
+Name=New Note
+Exec=dusk-sticky-notes --new-note

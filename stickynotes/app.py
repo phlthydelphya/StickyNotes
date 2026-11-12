@@ -1,0 +1,185 @@
+"""Application: owns the store, the notes list and the open note windows."""
+
+import signal
+import sys
+from pathlib import Path
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+
+from .hub_window import HubWindow  # noqa: E402
+from .note_window import NoteWindow  # noqa: E402
+from .palette import build_css  # noqa: E402
+from .store import NoteStore  # noqa: E402
+
+APP_ID = "org.duskos.StickyNotes"
+STYLE = Path(__file__).with_name("style.css")
+
+ACCELS = {
+    "app.new-note": ["<Control>n"],
+    "app.quit": ["<Control>q"],
+    "window.close": ["<Control>w"],
+    "win.bold": ["<Control>b"],
+    "win.italic": ["<Control>i"],
+    "win.underline": ["<Control>u"],
+    "win.strike": ["<Control>t"],
+    "win.bullets": ["<Control><Shift>l"],
+    "win.delete": ["<Control>d"],
+}
+
+
+class StickyApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.add_main_option("new-note", ord("n"), GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
+                             "Create a new note", None)
+        self.add_main_option("restore", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
+                             "Only reopen the notes left open (used at login)", None)
+        self.store = None
+        self.hub = None
+        self.note_windows = {}
+        self._restored = False
+
+    def do_startup(self):
+        Adw.Application.do_startup(self)
+        GLib.set_application_name("Sticky Notes")
+        Gtk.Window.set_default_icon_name(APP_ID)
+        # Above USER priority: a desktop theme's ~/.config/gtk-4.0/gtk.css must not
+        # repaint the notes, since a note's color is its identity.
+        display = Gdk.Display.get_default()
+        priority = Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
+        layout = Gtk.CssProvider()
+        layout.load_from_path(str(STYLE))
+        Gtk.StyleContext.add_provider_for_display(display, layout, priority)
+        self._palette_css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(display, self._palette_css, priority)
+        styles = Adw.StyleManager.get_default()
+        styles.connect("notify::dark", self._load_palette)
+        self._load_palette(styles)
+
+        self.store = NoteStore()
+        # Only collect orphan images against a notes.json that really loaded:
+        # after a corrupt or missing file, every image would look orphaned.
+        if self.store.load():
+            self.store.gc_images()
+
+        self._add_action("new-note", lambda *_: self.new_note())
+        self._add_action("show-list", lambda *_: self.show_list())
+        self._add_action("quit", lambda *_: self.quit_saving())
+        self._add_action("open-note", lambda _a, p: self.open_note(p.get_string()), "s")
+        self._add_action("delete-note", lambda _a, p: self.delete_note(p.get_string()), "s")
+        for action, accels in ACCELS.items():
+            self.set_accels_for_action(action, accels)
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_sigterm)
+
+    def _load_palette(self, styles, *_):
+        self._palette_css.load_from_string(build_css(styles.get_dark()))
+
+    def _add_action(self, name, callback, param=None):
+        act = Gio.SimpleAction.new(name, GLib.VariantType.new(param) if param else None)
+        act.connect("activate", callback)
+        self.add_action(act)
+
+    def _restore(self):
+        if not self._restored:
+            self._restored = True
+            for note in self.store.sorted():
+                if note.open and note.is_empty():
+                    self.store.delete(note.id)  # left open untouched at last quit
+                elif note.open:
+                    self.open_note(note.id)
+
+    def do_command_line(self, command_line):
+        options = command_line.get_options_dict()
+        if options.contains("new-note"):
+            self._restore()
+            self.new_note()
+        elif options.contains("restore"):
+            # With no open notes this opens nothing and the app exits.
+            self._restore()
+        else:
+            self.activate()
+        return 0
+
+    def do_activate(self):
+        self._restore()
+        self.show_list()
+
+    def do_shutdown(self):
+        try:
+            self._flush_all()
+        finally:
+            Adw.Application.do_shutdown(self)
+
+    # --- windows -------------------------------------------------------------
+    def show_list(self):
+        if self.hub is None:
+            self.hub = HubWindow(self)
+            self.hub.connect("close-request", self._on_hub_closed)
+        self.hub.present()
+
+    def _on_hub_closed(self, *_):
+        self.hub = None
+        return False
+
+    def new_note(self):
+        note = self.store.create()
+        self.open_note(note.id)
+
+    def open_note(self, note_id):
+        win = self.note_windows.get(note_id)
+        if win is None:
+            note = self.store.get(note_id)
+            if note is None:
+                return
+            win = NoteWindow(self, note)
+            self.note_windows[note_id] = win
+            if not note.open:
+                note.open = True
+                self.store.update(note, bump=False)
+        win.present()
+
+    def forget_note_window(self, note_id):
+        self.note_windows.pop(note_id, None)
+
+    def delete_note(self, note_id):
+        win = self.note_windows.get(note_id)
+        if win is not None:
+            win.present()
+            win.confirm_delete()
+            return
+        note = self.store.get(note_id)
+        if note is None or self.hub is None:
+            return
+        dialog = Adw.AlertDialog(heading="Delete this note?",
+                                 body="The note will be removed permanently.")
+        dialog.add_response("cancel", "Keep")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.connect("response", lambda _d, r: r == "delete" and self.store.delete(note_id))
+        dialog.present(self.hub)
+
+    # --- shutdown --------------------------------------------------------------
+    def _flush_all(self):
+        """Save every open note without marking it closed, so it reopens next launch."""
+        for win in list(self.note_windows.values()):
+            win.flush()
+        if self.store is not None:
+            self.store.try_save()
+
+    def quit_saving(self):
+        self._flush_all()
+        self.quit()
+
+    def _on_sigterm(self):
+        self.quit_saving()
+        return GLib.SOURCE_REMOVE
+
+
+def main():
+    return StickyApp().run(sys.argv)

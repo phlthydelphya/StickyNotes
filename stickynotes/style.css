@@ -1,0 +1,93 @@
+/* Layout and shape. Per-color rules come from palette.build_css(). */
+
+window.sticky {
+  border-radius: 8px;
+}
+
+window.sticky headerbar {
+  min-height: 36px;
+  box-shadow: none;
+  border-bottom: none;
+}
+
+window.sticky headerbar button {
+  min-height: 26px;
+  min-width: 26px;
+  padding: 2px;
+  color: inherit;
+  transition: opacity 150ms ease;
+}
+
+/* An inactive note shows only its colored strip, like a paper note. */
+window.sticky:backdrop headerbar button {
+  opacity: 0;
+}
+
+/* Dusk insets toolbarview content as a rounded panel; a note is one sheet of paper. */
+window.sticky toolbarview > scrolledwindow {
+  margin: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: inherit;
+}
+
+window.sticky textview.note-text,
+window.sticky textview.note-text text {
+  background-color: transparent;
+  color: inherit;
+  font-size: 11.5pt;
+}
+
+window.sticky .format-bar button {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 2px;
+  color: inherit;
+}
+
+window.sticky .format-bar button:checked {
+  background-color: alpha(currentColor, 0.14);
+}
+
+.note-image {
+  border-radius: 6px;
+  margin: 4px 0;
+}
+
+.note-menu .swatch {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid alpha(currentColor, 0.25);
+  color: #1f1f1f;
+}
+
+.note-menu .swatch.charcoal {
+  color: #f3f3f3;
+}
+
+/* Notes list */
+.note-list {
+  background: none;
+}
+
+.note-list > row {
+  padding: 5px 12px;
+  background: none;
+}
+
+.note-card {
+  border-radius: 8px;
+  border-top: 4px solid transparent;
+  padding: 8px 14px 12px 14px;
+  box-shadow: 0 1px 3px alpha(black, 0.15);
+}
+
+.note-list > row:hover .note-card {
+  box-shadow: 0 0 0 2px alpha(@accent_bg_color, 0.6), 0 1px 3px alpha(black, 0.15);
+}
+
+.note-card .card-image {
+  border-radius: 6px;
+}
