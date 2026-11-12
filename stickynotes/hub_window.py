@@ -3,7 +3,12 @@
 
 import datetime
 
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
+import gi
+
+gi.require_version("Graphene", "1.0")
+
+from gi.repository import Graphene  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
 REBUILD_DELAY_MS = 120
 PREVIEW_LINES = 6
@@ -37,10 +42,24 @@ class HubWindow(Adw.ApplicationWindow):
         header.pack_start(Gtk.Button(icon_name="list-add-symbolic", tooltip_text="New note (Ctrl+N)",
                                      action_name="app.new-note"))
 
-        self.search = Gtk.SearchEntry(placeholder_text="Search…", margin_start=12,
-                                      margin_end=12, margin_top=6, margin_bottom=6)
-        self.search.set_key_capture_widget(self)
+        # Hidden search that drops down under the header: toggle button, Ctrl+F,
+        # or just start typing. Escape closes it and clears the query.
+        self.search = Gtk.SearchEntry(placeholder_text="Search notes", hexpand=True)
         self.search.connect("search-changed", lambda *_: self._rebuild())
+        self.search_bar = Gtk.SearchBar(child=self.search, show_close_button=False)
+        self.search_bar.connect_entry(self.search)
+        self.search_bar.set_key_capture_widget(self)
+        self.search_bar.connect("notify::search-mode-enabled", self._on_search_mode)
+        search_toggle = Gtk.ToggleButton(icon_name="system-search-symbolic",
+                                         tooltip_text="Search (Ctrl+F)")
+        search_toggle.bind_property("active", self.search_bar, "search-mode-enabled",
+                                    GObject.BindingFlags.BIDIRECTIONAL
+                                    | GObject.BindingFlags.SYNC_CREATE)
+        menu = Gio.Menu()
+        menu.append("About Sticky Notes", "app.about")
+        header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
+                                       tooltip_text="Main menu", primary=True))
+        header.pack_end(search_toggle)
 
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.list.add_css_class("note-list")
@@ -68,12 +87,12 @@ class HubWindow(Adw.ApplicationWindow):
             notice = Adw.Banner(title="Recovered notes need your attention", button_label="Details", revealed=True)
             notice.connect("button-clicked", self._show_recovery_notice)
             body.append(notice)
-        body.append(self.search)
         self.stack.set_vexpand(True)
         body.append(self.stack)
 
         view = Adw.ToolbarView()
         view.add_top_bar(header)
+        view.add_top_bar(self.search_bar)
         view.set_content(body)
         self.set_content(view)
 
@@ -119,8 +138,12 @@ class HubWindow(Adw.ApplicationWindow):
             return
         self.window_title.set_subtitle("Not saved" if self.store.unsaved else "")
 
+    def _on_search_mode(self, bar, _pspec):
+        if not bar.get_search_mode():
+            self.search.set_text("")
+
     def _focus_search(self, *_):
-        self.search.grab_focus()
+        self.search_bar.set_search_mode(not self.search_bar.get_search_mode())
         return True
 
     def _schedule_rebuild(self):
@@ -193,9 +216,11 @@ class HubWindow(Adw.ApplicationWindow):
             item = Gio.MenuItem.new(title, None)
             item.set_action_and_target_value(action, GLib.Variant("s", row.note_id))
             menu.append_item(item)
-        px, py = self.list.translate_coordinates(row, x, y)
+        ok, point = self.list.compute_point(row, Graphene.Point().init(x, y))
+        if not ok:
+            return
         rect = Gdk.Rectangle()
-        rect.x, rect.y, rect.width, rect.height = int(px), int(py), 1, 1
+        rect.x, rect.y, rect.width, rect.height = int(point.x), int(point.y), 1, 1
         popover = Gtk.PopoverMenu(menu_model=menu, has_arrow=False, pointing_to=rect)
         popover.set_parent(row)
         popover.connect("closed", self._on_menu_closed)

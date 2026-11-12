@@ -86,7 +86,8 @@ class NoteWindow(Adw.Window):
         box.append(swatches)
         box.append(Gtk.Separator())
         for text, icon, action in (("Notes list", "view-list-symbolic", "app.show-list"),
-                                   ("Delete note", "user-trash-symbolic", "win.delete")):
+                                   ("Delete note", "user-trash-symbolic", "win.delete"),
+                                   ("About Sticky Notes", "help-about-symbolic", "app.about")):
             row = Gtk.Box(spacing=10)
             row.append(Gtk.Image(icon_name=icon))
             row.append(Gtk.Label(label=text, xalign=0))

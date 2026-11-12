@@ -1,13 +1,18 @@
 /* Layout and shape. Per-color rules come from palette.build_css(). */
 
-window.sticky {
-  border-radius: 8px;
+/* Header and window share one radius; Dusk's headerbar default (20px) would
+   otherwise curve inside the note's clip and show the body color in the corners. */
+window.sticky,
+window.sticky.maximized, window.sticky.tiled, window.sticky.tiled-top,
+window.sticky.tiled-right, window.sticky.tiled-bottom, window.sticky.tiled-left {
+  border-radius: 12px;
 }
 
 window.sticky headerbar {
   min-height: 36px;
   box-shadow: none;
   border-bottom: none;
+  border-radius: 12px 12px 0 0;
 }
 
 window.sticky headerbar button {

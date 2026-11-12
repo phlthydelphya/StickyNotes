@@ -12,6 +12,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from . import __version__  # noqa: E402
 from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
 from .palette import build_css  # noqa: E402
@@ -56,6 +57,9 @@ class StickyApp(Adw.Application):
         # Above USER priority: a desktop theme's ~/.config/gtk-4.0/gtk.css must not
         # repaint the notes, since a note's color is its identity.
         display = Gdk.Display.get_default()
+        source_icons = Path(__file__).resolve().parent.parent / "data"
+        if (source_icons / f"{APP_ID}.svg").is_file():  # running from a checkout
+            Gtk.IconTheme.get_for_display(display).add_search_path(str(source_icons))
         priority = Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
         layout = Gtk.CssProvider()
         layout.load_from_path(str(STYLE))
@@ -75,6 +79,7 @@ class StickyApp(Adw.Application):
         self._add_action("new-note", lambda *_: self.new_note())
         self._add_action("show-list", lambda *_: self.show_list())
         self._add_action("quit", lambda *_: self.quit_saving())
+        self._add_action("about", lambda *_: self.show_about())
         self._add_action("open-note", lambda _a, p: self.open_note(p.get_string()), "s")
         self._add_action("delete-note", lambda _a, p: self.delete_note(p.get_string()), "s")
         for action, accels in ACCELS.items():
@@ -139,6 +144,23 @@ class StickyApp(Adw.Application):
         dialog.set_close_response("close")
         dialog.connect("response", lambda *_: self.quit())
         dialog.present(self._newer_window)
+
+    def show_about(self):
+        about = Adw.AboutDialog(
+            application_name="Sticky Notes",
+            application_icon=APP_ID,
+            developer_name="phlthydelphya",
+            version=__version__,
+            comments="Quick colored notes for the Dusk desktop.",
+            developers=["phlthydelphya"],
+            designers=["phlthydelphya"],
+            copyright="© 2026 phlthydelphya",
+            license_type=Gtk.License.GPL_3_0,
+        )
+        about.add_credit_section("Built with", ["GTK https://gtk.org",
+                                                "libadwaita https://gnome.pages.gitlab.gnome.org/libadwaita/",
+                                                "PyGObject https://pygobject.gnome.org"])
+        about.present(self.get_active_window())
 
     def show_list(self):
         if self.store.read_only:
