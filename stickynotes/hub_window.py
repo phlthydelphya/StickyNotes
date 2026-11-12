@@ -56,6 +56,7 @@ class HubWindow(Adw.ApplicationWindow):
                                     GObject.BindingFlags.BIDIRECTIONAL
                                     | GObject.BindingFlags.SYNC_CREATE)
         menu = Gio.Menu()
+        menu.append("Preferences", "app.preferences")
         menu.append("About Sticky Notes", "app.about")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                        tooltip_text="Main menu", primary=True))

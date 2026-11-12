@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Install Dusk Sticky Notes for the current user (no root needed).
-# Usage: ./install.sh              install or update
-#        ./install.sh --autostart  also reopen open notes at login
-#        ./install.sh --uninstall  remove the app (notes in ~/.local/share/dusk-sticky-notes stay)
+# Usage: ./install.sh [--autostart] [--no-shortcut]
+#          install or update; --autostart reopens notes at login,
+#          --no-shortcut skips the global Ctrl+Alt+N new-note shortcut
+#        ./install.sh --uninstall
+#          remove the app, its autostart entry and shortcut
+#          (notes in ~/.local/share/dusk-sticky-notes stay)
+# Autostart and the shortcut can be changed later in the app's Preferences.
 set -euo pipefail
+
+AUTOSTART_OPT=0
+SHORTCUT_OPT=1
+UNINSTALL=0
+for arg in "$@"; do
+  case "$arg" in
+    --autostart) AUTOSTART_OPT=1 ;;
+    --no-shortcut) SHORTCUT_OPT=0 ;;
+    --uninstall) UNINSTALL=1 ;;
+    *) echo "Unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
 
 APP_ID=org.duskos.StickyNotes
 SRC=$(cd "$(dirname "$0")" && pwd)
@@ -12,11 +28,20 @@ LIB="$HOME/.local/lib/dusk-sticky-notes"
 BIN="$HOME/.local/bin/dusk-sticky-notes"
 DESKTOP="$HOME/.local/share/applications/$APP_ID.desktop"
 ICON="$HOME/.local/share/icons/hicolor/scalable/apps/$APP_ID.svg"
+SYMBOLIC_ICON="$HOME/.local/share/icons/hicolor/symbolic/apps/$APP_ID-symbolic.svg"
 AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$APP_ID.desktop"
 
-if [[ "${1:-}" == "--uninstall" ]]; then
+# Same code the Preferences switches use (stickynotes/integration.py).
+integrate() {  # integrate <lib-dir> <python statements using `i`> [arg -> sys.argv[3]]
+  python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); from stickynotes import integration as i; exec(sys.argv[2])' "$@"
+}
+
+if (( UNINSTALL )); then
+  if [[ -d "$LIB/stickynotes" ]]; then
+    integrate "$LIB" 'i.set_autostart(False); i.set_shortcut(False)' || true
+  fi
   rm -rf -- "$LIB"
-  rm -f -- "$BIN" "$DESKTOP" "$ICON" "$AUTOSTART"
+  rm -f -- "$BIN" "$DESKTOP" "$ICON" "$SYMBOLIC_ICON" "$AUTOSTART"
   echo "Removed. Notes kept in ${XDG_DATA_HOME:-$HOME/.local/share}/dusk-sticky-notes"
   exit 0
 fi
@@ -68,13 +93,22 @@ mv -- "$STAGE/dusk-sticky-notes" "$LIB/dusk-sticky-notes"
 ln -sf "$LIB/dusk-sticky-notes" "$BIN"
 install -m 644 "$SRC/data/$APP_ID.desktop" "$DESKTOP"
 install -m 644 "$SRC/data/$APP_ID.svg" "$ICON"
+install -D -m 644 "$SRC/data/$APP_ID-symbolic.svg" "$SYMBOLIC_ICON"
 update-desktop-database -q "$(dirname "$DESKTOP")" 2>/dev/null || true
 gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
-if [[ "${1:-}" == "--autostart" ]]; then
-  mkdir -p "$(dirname "$AUTOSTART")"
-  sed -e "s|^Exec=dusk-sticky-notes\$|Exec=$BIN --restore|" \
-      -e '/^Actions=/d' -e '/^\[Desktop Action/,$d' "$SRC/data/$APP_ID.desktop" > "$AUTOSTART"
-  printf 'X-GNOME-Autostart-enabled=true\nNoDisplay=true\n' >> "$AUTOSTART"
+if (( AUTOSTART_OPT )); then
+  integrate "$LIB" "i.set_autostart(True, sys.argv[3])" "$BIN"
   echo "Autostart enabled: $AUTOSTART"
+fi
+# Fresh install: turn the shortcut on unless --no-shortcut. Upgrade: keep the
+# choice made in Preferences and only refresh the command of an enabled one.
+if (( HAD_TREE )); then
+  integrate "$LIB" "i.shortcut_enabled() and i.set_shortcut(True, sys.argv[3]); i.autostart_enabled() and i.set_autostart(True, sys.argv[3])" "$BIN"
+elif (( SHORTCUT_OPT )); then
+  if integrate "$LIB" "sys.exit(0 if i.set_shortcut(True, sys.argv[3]) else 1)" "$BIN"; then
+    echo "Shortcut: Ctrl+Alt+N creates a new note"
+  else
+    echo "Shortcut skipped: GNOME media-keys settings not available" >&2
+  fi
 fi
 echo "Installed. Run: dusk-sticky-notes"

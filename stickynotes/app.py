@@ -16,7 +16,9 @@ from . import __version__  # noqa: E402
 from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
 from .palette import build_css  # noqa: E402
+from .preferences import Preferences, PreferencesDialog  # noqa: E402
 from .store import LoadState, NoteStore  # noqa: E402
+from .tray import Tray  # noqa: E402
 
 APP_ID = "org.duskos.StickyNotes"
 STYLE = Path(__file__).with_name("style.css")
@@ -24,6 +26,7 @@ STYLE = Path(__file__).with_name("style.css")
 ACCELS = {
     "app.new-note": ["<Control>n"],
     "app.quit": ["<Control>q"],
+    "app.preferences": ["<Control>comma"],
     "window.close": ["<Control>w"],
     "win.bold": ["<Control>b"],
     "win.italic": ["<Control>i"],
@@ -49,6 +52,9 @@ class StickyApp(Adw.Application):
         self._shutdown_saved = False
         self._save_dialog = None
         self._newer_window = None
+        self.prefs = None
+        self.tray = None
+        self._held = False
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -58,7 +64,8 @@ class StickyApp(Adw.Application):
         # repaint the notes, since a note's color is its identity.
         display = Gdk.Display.get_default()
         source_icons = Path(__file__).resolve().parent.parent / "data"
-        if (source_icons / f"{APP_ID}.svg").is_file():  # running from a checkout
+        from_checkout = (source_icons / f"{APP_ID}.svg").is_file()
+        if from_checkout:
             Gtk.IconTheme.get_for_display(display).add_search_path(str(source_icons))
         priority = Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
         layout = Gtk.CssProvider()
@@ -80,11 +87,47 @@ class StickyApp(Adw.Application):
         self._add_action("show-list", lambda *_: self.show_list())
         self._add_action("quit", lambda *_: self.quit_saving())
         self._add_action("about", lambda *_: self.show_about())
+        self._add_action("preferences", lambda *_: self.show_preferences())
         self._add_action("open-note", lambda _a, p: self.open_note(p.get_string()), "s")
         self._add_action("delete-note", lambda _a, p: self.delete_note(p.get_string()), "s")
         for action, accels in ACCELS.items():
             self.set_accels_for_action(action, accels)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_sigterm)
+
+        self.prefs = Preferences().load()
+        self.tray = Tray(self, APP_ID, "Sticky Notes",
+                         icon_theme_path=str(source_icons) if from_checkout else "",
+                         on_availability=lambda _ok: self._update_hold())
+        # Decide the hold now: with --restore and no open notes, an async check
+        # would come too late and the app would exit before the icon appears.
+        self._update_hold(self.tray.start())
+
+    # --- background / tray -----------------------------------------------------
+    def _update_hold(self, tray_ok=None):
+        """Stay alive with no windows only when close-to-tray is on and a tray exists."""
+        if tray_ok is None:
+            tray_ok = self.tray is not None and self.tray.available
+        want = self.prefs.close_to_tray and tray_ok
+        if want and not self._held:
+            self.hold()
+            self._held = True
+        elif not want and self._held:
+            self._held = False
+            self.release()
+
+    def set_close_to_tray(self, enabled):
+        self.prefs.values["close_to_tray"] = enabled
+        self.prefs.save()
+        self._update_hold()
+
+    def toggle_list(self):
+        if self.hub is not None and self.hub.is_active():
+            self.hub.close()
+        else:
+            self.show_list()
+
+    def show_preferences(self):
+        PreferencesDialog(self).present(self.get_active_window())
 
     def _load_palette(self, styles, *_):
         self._palette_css.load_from_string(build_css(styles.get_dark()))
@@ -112,7 +155,8 @@ class StickyApp(Adw.Application):
             self._restore()
             self.new_note()
         elif options.contains("restore"):
-            # With no open notes this opens nothing and the app exits.
+            # With no open notes this opens nothing: the app then waits in the
+            # tray, or exits when there is no tray.
             self._restore()
         else:
             self.activate()
@@ -129,6 +173,9 @@ class StickyApp(Adw.Application):
         try:
             self._save_for_shutdown()
         finally:
+            tray = getattr(self, "tray", None)
+            if tray is not None:
+                tray.stop()
             Adw.Application.do_shutdown(self)
 
     # --- windows -------------------------------------------------------------

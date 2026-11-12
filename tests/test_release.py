@@ -199,7 +199,8 @@ def test_installer_preserves_working_copy(tmp_path):
     home = tmp_path / 'home'
     home.mkdir()
     env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'),
-               XDG_DATA_HOME=str(home / '.local/share'), PYTHONDONTWRITEBYTECODE='1')
+               XDG_DATA_HOME=str(home / '.local/share'), PYTHONDONTWRITEBYTECODE='1',
+               GSETTINGS_BACKEND='memory')  # never touch the real GNOME shortcuts
     notes = home / '.local/share/dusk-sticky-notes/notes.json'
     notes.parent.mkdir(parents=True)
     notes.write_text('precious notes')

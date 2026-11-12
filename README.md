@@ -9,6 +9,7 @@ Python + PyGObject, GTK 4 + libadwaita.
     ./dusk-sticky-notes --new-note  # straight to a new note
     ./install.sh                    # install to ~/.local (./install.sh --uninstall to remove)
     ./install.sh --autostart        # also reopen open notes at login (runs --restore)
+    ./install.sh --no-shortcut      # skip the global Ctrl+Alt+N shortcut on a fresh install
 
 ## Features
 
@@ -17,12 +18,19 @@ Python + PyGObject, GTK 4 + libadwaita.
 - Bold, italic, underline, strikethrough, bullet lists, images (file picker or pasted screenshot).
 - Autosave; open notes reopen on next launch; an empty note is discarded when closed.
 - An inactive note hides its controls and shows only the colored sheet.
+- Tray icon (monochrome, follows the panel color): New Note, Show Notes List, Preferences, Quit.
+  Left click toggles the notes list, middle click makes a new note.
+- Preferences (Ctrl+,): keep running in the tray when closed (on by default; ignored when the
+  session has no tray, so the app never runs invisibly), start at login, and a global
+  Ctrl+Alt+N new-note shortcut (a GNOME custom shortcut running `dusk-sticky-notes --new-note`).
 
 ## Shortcuts
 
 | Keys | Action |
 |---|---|
-| Ctrl+N | New note |
+| Ctrl+N | New note (in the app) |
+| Ctrl+Alt+N | New note from anywhere (if enabled) |
+| Ctrl+, | Preferences |
 | Ctrl+B / I / U / T | Bold / italic / underline / strikethrough |
 | Ctrl+Shift+L | Bullets |
 | Ctrl+D | Delete note |
