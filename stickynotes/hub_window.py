@@ -22,6 +22,7 @@ REBUILD_DELAY_MS = 120
 COMPACT_LINES = 2
 COMPACT_IMAGE_HEIGHT = 56
 EDITOR_MIN_HEIGHT = 80
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 360, 600
 EXPAND_MS = 200
 # A captured selection waits this long for the window to get focus (Wayland
 # hands the selection only to the focused app), then is read anyway.
@@ -41,8 +42,8 @@ def format_time(ts):
 
 class HubWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Sticky Notes", default_width=360,
-                         default_height=600)
+        super().__init__(application=app, title="Sticky Notes", default_width=DEFAULT_WIDTH,
+                         default_height=DEFAULT_HEIGHT)
         self.app = app
         self.store = app.store
         self._rebuild_source = 0
@@ -124,6 +125,10 @@ class HubWindow(Adw.ApplicationWindow):
         view.add_top_bar(self.search_bar)
         view.set_content(self.toasts)
         self.set_content(view)
+        # Wide enough that the centered title is not cut off by this desktop's title
+        # buttons (minimize and maximize add two) and font size.
+        header_width = header.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+        self.set_default_size(max(DEFAULT_WIDTH, header_width), DEFAULT_HEIGHT)
 
         find = Gtk.ShortcutController()
         find.add_shortcut(Gtk.Shortcut(trigger=Gtk.ShortcutTrigger.parse_string("<Control>f"),

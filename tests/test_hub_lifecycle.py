@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from stickynotes.app import Adw, Gdk, Gio, GLib
+from stickynotes.app import Adw, Gdk, Gio, GLib, Gtk
 from stickynotes.hub_window import HubWindow, REBUILD_DELAY_MS
 from stickynotes.store import NoteStore
 
@@ -240,3 +240,19 @@ def test_twenty_reopens_have_one_subscription_each(app):
     assert len(app.store._listeners) == len(app.store._save_listeners) == 1
     print('After 20 reopen cycles: 1 note-change + 1 save-state listener')
     current.close()
+
+
+def test_default_width_fits_the_whole_title(app):
+    hub = HubWindow(app)
+    title_label = hub.window_title.get_first_child()
+    while title_label is not None and not isinstance(title_label, Gtk.Label):
+        title_label = title_label.get_first_child()
+    header = hub.window_title.get_parent()
+    while not isinstance(header, Adw.HeaderBar):
+        header = header.get_parent()
+    width, _height = hub.get_default_size()
+    assert width >= header.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+    hub.present()
+    advance(200)
+    assert title_label.get_layout().is_ellipsized() is False
+    hub.close()
