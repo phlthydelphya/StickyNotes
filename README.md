@@ -36,7 +36,10 @@ Python + PyGObject, GTK 4 + libadwaita.
   A ticked item moves below the open ones; unticked, it moves back up.
 - Web addresses, email addresses and file paths are underlined; Ctrl+click opens them.
 - Text in images: with `tesseract` installed (`tesseract-ocr` package), screenshots and
-  pictures are read in the background so a search finds the words in them.
+  pictures are read in the background so a search finds the words in them. Right-click an
+  image for Insert Text from Image (the text goes on the lines below it) or Copy Text from
+  Image. The scanner button (Screenshot to text) opens GNOME's screenshot UI and puts only the
+  text it finds at the cursor; the picture is not added to the note.
 - Activities search: after `sudo ./install-search-provider.sh` and a new login, typing in
   GNOME's overview lists matching notes; choosing one opens it.
 - Screenshots: the camera button opens GNOME's screenshot UI (area, window or screen) through

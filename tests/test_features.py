@@ -13,7 +13,8 @@ import pytest
 from stickynotes.app import Adw, Gdk, Gio, GLib, Gtk, StickyApp
 from stickynotes import reminders, search_provider, selection
 from stickynotes.hub_window import HubWindow, REBUILD_DELAY_MS
-from stickynotes.ocr import OcrIndex
+from stickynotes.note_editor import NoteEditor
+from stickynotes.ocr import OcrIndex, tidy
 from stickynotes.richtext import RichEditor, checklist_progress, link_target
 from stickynotes.store import NoteStore, validate
 
@@ -255,6 +256,78 @@ def test_unreadable_image_is_not_retried(tmp_path):
     index.scan()
     assert run_until(lambda: index._running is None and index._failed)
     assert index.pending() == [] and "a.png" not in store.image_text
+
+
+def test_tidy_keeps_lines_for_a_note():
+    assert tidy("\n\nTotal  \n\n\n\n42\n\f") == "Total\n\n42"
+    assert tidy("\f\n  \n") == ""
+
+
+def image_editor(tmp_path, program, errors):
+    store = NoteStore(tmp_path / "data")
+    store.load()
+    note = store.create()
+    note.content = [{"t": "Before\n"}, {"img": "a.png"}, {"t": "\nAfter"}]
+    store.image_path("a.png").write_bytes(b"x")
+    ed = NoteEditor(store, note, on_error=errors.append, on_screenshot_added=lambda: None,
+                    on_screenshot_discarded=lambda: None)
+    ed.ocr_program = program
+    return ed
+
+
+@needs_display
+def test_insert_text_from_image_goes_below_it(tmp_path):
+    errors = []
+    ed = image_editor(tmp_path, fake_tesseract(tmp_path, "INVOICE\n\n\n42\n"), errors)
+    ed._menu_anchor = next(iter(ed.rich.anchor_files))
+    ed.actions.activate_action("image-text-insert", None)
+    assert ed._menu_anchor is None
+    assert run_until(lambda: "INVOICE" in text_of(ed.rich))
+    assert errors == []
+    ed.flush()
+    assert ed.note.content == [{"t": "Before\n", "s": []}, {"img": "a.png"},
+                               {"t": "\nINVOICE\n\n42\nAfter", "s": []}]
+
+
+@needs_display
+def test_image_text_reports_no_text_and_missing_tesseract(tmp_path):
+    errors = []
+    ed = image_editor(tmp_path, fake_tesseract(tmp_path, "  \n"), errors)
+    ed._menu_anchor = next(iter(ed.rich.anchor_files))
+    ed.actions.activate_action("image-text-copy", None)
+    assert run_until(lambda: errors)
+    assert errors == ["No text found in the image"]
+    ed.ocr_program = None
+    ed.take_screenshot_text()
+    assert ed._screenshot is None and errors[-1] == "Install tesseract-ocr to read text in images"
+
+
+@needs_display
+def test_text_after_image_at_the_end_of_a_note():
+    ed = editor("", [{"t": "x\n"}, {"img": "a.png"}])
+    anchor = next(iter(ed.anchor_files))
+    assert ed.insert_text_after_image(anchor, "hello")
+    assert ed.dump() == [{"t": "x\n", "s": []}, {"img": "a.png"}, {"t": "\nhello", "s": []}]
+    ed.anchor_files.clear()
+    ed.buf.set_text("")
+    assert anchor.get_deleted() and not ed.insert_text_after_image(anchor, "hello")
+
+
+@needs_display
+def test_screenshot_to_text_inserts_lines_not_the_picture(tmp_path):
+    errors = []
+    ed = image_editor(tmp_path, fake_tesseract(tmp_path, "line one\nline two\n"), errors)
+    buf = ed.rich.buf
+    buf.place_cursor(buf.get_end_iter())  # after "After"
+    shot = tmp_path / "Screenshot.png"
+    shot.write_bytes(b"x")
+    ed._on_screenshot_text("ok", shot.as_uri())
+    assert run_until(lambda: "line two" in text_of(ed.rich))
+    assert text_of(ed.rich).endswith("After\nline one\nline two")
+    assert len(ed.rich.anchor_files) == 1 and errors == []
+    ed._on_screenshot_text("cancelled", None)
+    ed._on_screenshot_text("failed", None)
+    assert errors == ["Screenshot could not be taken"]
 
 
 # --- desktop search ----------------------------------------------------------------------------

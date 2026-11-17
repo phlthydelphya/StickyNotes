@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Editing one note: rich text, format bar, autosave, images and screenshots.
+"""Editing one note: rich text, format bar, autosave, images, screenshots and the
+text in them.
 
 Shared by the floating note window and the expanded card in the notes list."""
 
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from gi.repository import Gdk, Gio, GLib, Gtk
 
+from . import ocr
 from .capture import CANCELLED, OK, ScreenshotRequest
 from .richtext import TAGS, RichEditor
 
@@ -48,6 +50,8 @@ class NoteEditor:
         self._before_save = before_save
         self._content_source = 0
         self._screenshot = None
+        self._menu_anchor = None  # the image a right-click menu is open for
+        self.ocr_program = ocr.find_program()
 
         self.view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=6, bottom_margin=12,
                                  left_margin=14, right_margin=14, vexpand=True)
@@ -61,6 +65,7 @@ class NoteEditor:
         self.rich.connect("content-changed", self._on_content_changed)
         self.rich.connect("state-changed", lambda *_: self._sync_format_state())
         self.rich.connect("link-activated", self._on_link)
+        self.rich.connect("image-menu", self._on_image_menu)
         self._sync_format_state()
 
     # --- UI ------------------------------------------------------------------
@@ -92,6 +97,10 @@ class NoteEditor:
                           focus_on_click=False, action_name="win.screenshot")
         shot.add_css_class("flat")
         bar.append(shot)
+        shot_text = Gtk.Button(icon_name="scanner-symbolic", tooltip_text="Screenshot to text",
+                               focus_on_click=False, action_name="win.screenshot-text")
+        shot_text.add_css_class("flat")
+        bar.append(shot_text)
         return bar
 
     def _build_actions(self):
@@ -107,7 +116,10 @@ class NoteEditor:
         group.add_action(self.list_action)
         for name, cb in (("bullets", lambda *_: self.rich.toggle_bullets()),
                          ("insert-image", lambda *_: self._choose_image()),
-                         ("screenshot", lambda *_: self.take_screenshot())):
+                         ("screenshot", lambda *_: self.take_screenshot()),
+                         ("screenshot-text", lambda *_: self.take_screenshot_text()),
+                         ("image-text-insert", lambda *_: self._image_text(insert=True)),
+                         ("image-text-copy", lambda *_: self._image_text(insert=False))):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", cb)
             group.add_action(act)
@@ -178,6 +190,16 @@ class NoteEditor:
         """Add plain text at the cursor (a captured selection) and save it."""
         self.rich.buf.insert_at_cursor(text)
         self.view.scroll_mark_onscreen(self.rich.buf.get_insert())
+
+    def insert_block(self, text):
+        """Add text at the cursor, starting on a line of its own."""
+        buf = self.rich.buf
+        buf.begin_user_action()
+        if not buf.get_iter_at_mark(buf.get_insert()).starts_line():
+            buf.insert_at_cursor("\n")
+        buf.insert_at_cursor(text)
+        buf.end_user_action()
+        self.view.scroll_mark_onscreen(buf.get_insert())
 
     # --- links -------------------------------------------------------------------
     def _on_link(self, _rich, target):
@@ -277,3 +299,73 @@ class NoteEditor:
             return False
         self.rich.insert_image_at_cursor(name)
         return True
+
+    # --- text in images -------------------------------------------------------------
+    def read_text(self, path, on_text):
+        """Run Tesseract on path; on_text(text) gets its lines when it found any."""
+        if not self.ocr_program:
+            self._on_error("Install tesseract-ocr to read text in images")
+            return
+
+        def done(out):
+            if self.closed:
+                return
+            text = ocr.tidy(out) if out is not None else None
+            if text is None:
+                self._on_error("Could not read the image")
+            elif not text:
+                self._on_error("No text found in the image")
+            else:
+                on_text(text)
+
+        if not ocr.read_image(self.ocr_program, path, done):
+            self._on_error("Could not read the image")
+
+    def _on_image_menu(self, _rich, picture, anchor):
+        self._menu_anchor = anchor
+        menu = Gio.Menu()
+        menu.append("Insert Text from Image", "win.image-text-insert")
+        menu.append("Copy Text from Image", "win.image-text-copy")
+        popover = Gtk.PopoverMenu.new_from_model(menu)
+        popover.set_has_arrow(False)
+        popover.set_parent(picture)
+        # Unparent after the chosen item's action has run.
+        popover.connect("closed", lambda p: GLib.idle_add(
+            lambda: p.unparent() or GLib.SOURCE_REMOVE))
+        popover.popup()
+
+    def _image_text(self, insert):
+        anchor, self._menu_anchor = self._menu_anchor, None
+        name = self.rich.anchor_files.get(anchor) if anchor is not None else None
+        if name is None or anchor.get_deleted():
+            return
+        try:
+            path = self.store.image_path(name)
+        except ValueError:
+            self._on_error("Could not read the image")
+            return
+        if insert:
+            self.read_text(path, lambda text: self.rich.insert_text_after_image(anchor, text))
+        else:
+            self.read_text(path, lambda text: self.view.get_clipboard().set(text))
+
+    def take_screenshot_text(self):
+        """Open the desktop's screenshot UI and put the text in the picture at the cursor;
+        the picture itself is not added to the note."""
+        if self._screenshot is not None:
+            return
+        if not self.ocr_program:
+            self._on_error("Install tesseract-ocr to read text in images")
+            return
+        self._screenshot = ScreenshotRequest(self._on_screenshot_text)
+        self._screenshot.start()
+
+    def _on_screenshot_text(self, status, uri):
+        self._screenshot = None
+        if self.closed or status == CANCELLED:
+            return
+        path = Gio.File.new_for_uri(uri).get_path() if status == OK else None
+        if not path:
+            self._on_error("Screenshot could not be taken")
+            return
+        self.read_text(path, self.insert_block)

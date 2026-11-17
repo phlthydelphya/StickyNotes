@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Text in images, for search: Tesseract reads each note image once, in the background.
+"""Text in images: Tesseract reads each note image once, in the background, for search,
+and read_image() reads one image on request, for text the user puts in a note.
 
-The text is derived data, so it lives in the user cache dir, not in notes.json.
+The search text is derived data, so it lives in the user cache dir, not in notes.json.
 Without the tesseract program nothing runs and searches see note text only."""
 
 import json
@@ -19,9 +20,50 @@ def default_cache_file():
     return Path(GLib.get_user_cache_dir()) / "dusk-sticky-notes" / "image-text.json"
 
 
+def find_program():
+    return GLib.find_program_in_path("tesseract")
+
+
 def clean(text):
     """Tesseract output as one line of words."""
     return " ".join(text.split())
+
+
+def tidy(text):
+    """Tesseract output as lines for a note: no trailing spaces or form feed, at most
+    one blank line in a row, none at the start or end."""
+    lines = []
+    for line in text.replace("\f", "").splitlines():
+        line = line.rstrip()
+        if line or (lines and lines[-1]):
+            lines.append(line)
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
+def read_image(program, path, on_done):
+    """Run Tesseract on path in the background; on_done(text) gets its raw output,
+    or None when it did not start or failed. Returns False when it did not start."""
+    launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.STDOUT_PIPE
+                                          | Gio.SubprocessFlags.STDERR_SILENCE)
+    launcher.setenv("OMP_THREAD_LIMIT", "1", True)  # stay in the background
+    try:
+        proc = launcher.spawnv([program, str(path), "stdout"])
+    except GLib.Error as err:
+        print(f"dusk-sticky-notes: tesseract did not start: {err.message}", file=sys.stderr)
+        return False
+
+    def finished(proc, result):
+        try:
+            _ok, out, _err = proc.communicate_utf8_finish(result)
+        except GLib.Error:
+            out = None
+        ok = proc.get_if_exited() and proc.get_exit_status() == 0
+        on_done(out if ok else None)
+
+    proc.communicate_utf8_async(None, None, finished)
+    return True
 
 
 class OcrIndex:
@@ -30,7 +72,7 @@ class OcrIndex:
     def __init__(self, store, cache_file=None, program=None, on_update=None):
         self.store = store
         self.cache_file = Path(cache_file) if cache_file else default_cache_file()
-        self.program = program if program is not None else GLib.find_program_in_path("tesseract")
+        self.program = program if program is not None else find_program()
         self.on_update = on_update
         self._running = None  # image name being read
         self._failed = set()  # unreadable this session; not retried until restart
@@ -104,25 +146,14 @@ class OcrIndex:
             self._failed.add(name)
             self.scan()
             return
-        launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.STDOUT_PIPE
-                                              | Gio.SubprocessFlags.STDERR_SILENCE)
-        launcher.setenv("OMP_THREAD_LIMIT", "1", True)  # stay in the background
-        try:
-            proc = launcher.spawnv([self.program, str(path), "stdout"])
-        except GLib.Error as err:
-            print(f"dusk-sticky-notes: tesseract did not start: {err.message}", file=sys.stderr)
-            self.program = None
-            return
         self._running = name
-        proc.communicate_utf8_async(None, None, self._on_read, name)
+        if not read_image(self.program, path, lambda out: self._on_read(name, out)):
+            self._running = None
+            self.program = None
 
-    def _on_read(self, proc, result, name):
+    def _on_read(self, name, out):
         self._running = None
-        try:
-            _ok, out, _err = proc.communicate_utf8_finish(result)
-        except GLib.Error:
-            out = None
-        if proc.get_if_exited() and proc.get_exit_status() == 0 and out is not None:
+        if out is not None:
             self.texts[name] = clean(out)
             if not self._save_source:
                 self._save_source = GLib.timeout_add(SAVE_DELAY_MS, self._save)

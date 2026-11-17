@@ -120,6 +120,8 @@ class RichEditor(GObject.Object):
         "state-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "content-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "link-activated": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        # Right click on an image: (its widget, its anchor).
+        "image-menu": (GObject.SignalFlags.RUN_FIRST, None, (Gtk.Widget, Gtk.TextChildAnchor)),
     }
 
     def __init__(self, view, resolve_image_path):
@@ -467,7 +469,32 @@ class RichEditor(GObject.Object):
             picture.add_css_class("note-image")
         anchor = self.buf.create_child_anchor(it)
         self.anchor_files[anchor] = name
+        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        menu.connect("pressed", self._on_image_pressed, picture, anchor)
+        picture.add_controller(menu)
         self.view.add_child_at_anchor(picture, anchor)
+
+    def _on_image_pressed(self, gesture, _n, _x, _y, picture, anchor):
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)  # not the text view's menu
+        self.emit("image-menu", picture, anchor)
+
+    def insert_text_after_image(self, anchor, text):
+        """Put text on its own lines just after the image at anchor; False if it is gone."""
+        if anchor.get_deleted() or not text:
+            return False
+        it = self.buf.get_iter_at_child_anchor(anchor)
+        it.forward_char()
+        self.buf.begin_user_action()
+        if it.is_end():
+            self.buf.insert(it, "\n" + text)
+        elif it.ends_line():
+            it.forward_line()
+            self.buf.insert(it, text + "\n")
+        else:
+            self.buf.insert(it, "\n" + text + "\n")
+        self.buf.end_user_action()
+        self.buf.place_cursor(it)
+        return True
 
     def insert_image_at_cursor(self, name):
         it = self.buf.get_iter_at_mark(self.buf.get_insert())
