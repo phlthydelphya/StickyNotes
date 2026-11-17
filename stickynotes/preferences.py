@@ -6,7 +6,10 @@ import os
 import sys
 from pathlib import Path
 
-from gi.repository import Adw, GLib
+import gi
+
+gi.require_version("Adw", "1")
+from gi.repository import Adw, GLib  # noqa: E402
 
 from . import integration
 
