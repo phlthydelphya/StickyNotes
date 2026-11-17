@@ -212,6 +212,8 @@ def test_installer_preserves_working_copy(tmp_path):
                               capture_output=True, text=True).returncode == 0
     assert install().returncode == 0
     assert runs()
+    service = home / '.local/share/dbus-1/services/org.duskos.StickyNotes.service'
+    assert f'Exec="{home}/.local/bin/dusk-sticky-notes" --gapplication-service' in service.read_text()
     module = checkout / 'stickynotes/app.py'
     module.write_text(module.read_text() + '\n# upgraded\n')
     assert install('--autostart').returncode == 0
@@ -238,6 +240,7 @@ def test_installer_preserves_working_copy(tmp_path):
     assert notes.read_text() == 'precious notes'
     assert not list(installed.parents[1].glob('.stage-*'))
     assert install('--uninstall').returncode == 0
+    assert not service.exists()
     assert notes.read_text() == 'precious notes'
 
 

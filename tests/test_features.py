@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pin, undo delete, typing shortcuts, checklists, links and selection capture."""
+"""Pin, undo delete, typing shortcuts, checklists, links, desktop search and
+selection capture."""
 import json
 import os
 import uuid
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from stickynotes.app import Adw, Gdk, Gio, GLib, Gtk, StickyApp
-from stickynotes import selection
+from stickynotes import search_provider, selection
 from stickynotes.hub_window import HubWindow, REBUILD_DELAY_MS
 from stickynotes.richtext import RichEditor, checklist_progress, link_target
 from stickynotes.store import NoteStore, validate
@@ -159,6 +160,67 @@ def test_links_are_found_and_ctrl_click_targets():
     end = ed.buf.get_end_iter()
     end.backward_char()
     assert ed.link_at(end) == "www.example.org"
+
+
+# --- desktop search ----------------------------------------------------------------------------
+def test_search_provider_results_and_metas(tmp_path):
+    store = NoteStore(tmp_path)
+    store.load()
+    shop = note_with(store, "Shopping\n☐ milk\n☐ bread")
+    pic = store.create()
+    pic.content = [{"img": "x.png"}]
+    store.update(pic)
+    note_with(store, "unrelated")
+    assert search_provider.find(store, ["MILK"]) == [shop.id]
+    assert search_provider.find(store, ["milk"], among=[pic.id]) == []
+    assert search_provider.find(store, ["  "]) == []
+    meta = search_provider.meta(store, shop, "icon")
+    assert meta["name"].unpack() == "Shopping" and meta["description"].unpack() == "☐ milk · ☐ bread"
+    meta = search_provider.meta(store, pic, "icon")
+    assert meta["name"].unpack() == "Image note" and "description" not in meta
+
+
+def test_search_provider_over_dbus(tmp_path):
+    try:
+        address = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)
+    except GLib.Error:
+        pytest.skip("needs a session bus; run under dbus-run-session")
+    store = NoteStore(tmp_path)
+    store.load()
+    note = note_with(store, "Dentist Tuesday")
+    activated = []
+    app = SimpleNamespace(store=store,
+                          activate_search_result=lambda nid, ts: activated.append(nid),
+                          launch_search=lambda terms, ts: activated.append(terms))
+    flags = (Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT
+             | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION)
+    server = Gio.DBusConnection.new_for_address_sync(address, flags, None, None)
+    client = Gio.DBusConnection.new_for_address_sync(address, flags, None, None)
+    provider = search_provider.SearchProvider(app, "org.duskos.StickyNotes")
+    provider.register(server)
+    replies = []
+
+    def call(method, args, reply_type):
+        client.call(server.get_unique_name(), search_provider.OBJECT_PATH, search_provider.IFACE,
+                    method, args, GLib.VariantType(reply_type) if reply_type else None,
+                    Gio.DBusCallFlags.NONE, 2000, None,
+                    lambda c, r: replies.append(c.call_finish(r).unpack()))
+        assert run_until(lambda: replies)
+        return replies.pop()
+
+    try:
+        assert call("GetInitialResultSet", GLib.Variant("(as)", (["dentist"],)), "(as)") == ([note.id],)
+        assert call("GetSubsearchResultSet", GLib.Variant("(asas)", ([note.id], ["tues"])),
+                    "(as)") == ([note.id],)
+        (metas,) = call("GetResultMetas", GLib.Variant("(as)", ([note.id, "gone"],)), "(aa{sv})")
+        assert [m["name"] for m in metas] == ["Dentist Tuesday"]
+        call("ActivateResult", GLib.Variant("(sasu)", (note.id, ["dentist"], 0)), None)
+        call("LaunchSearch", GLib.Variant("(asu)", (["den"], 0)), None)
+        assert activated == [note.id, ["den"]]
+    finally:
+        provider.unregister()
+        server.close_sync(None)
+        client.close_sync(None)
 
 
 # --- selection capture -----------------------------------------------------------------------

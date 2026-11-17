@@ -205,6 +205,13 @@ class HubWindow(Adw.ApplicationWindow):
             for chip in self.color_chips.values():
                 chip.set_active(False)
 
+    def set_search(self, text):
+        """Open the search with text in it (a search continued from the desktop)."""
+        self.search_bar.set_search_mode(True)
+        self.search.set_text(text)
+        self.search.set_position(-1)
+        self._rebuild()
+
     def _focus_search(self, *_):
         self.search_bar.set_search_mode(not self.search_bar.get_search_mode())
         return True

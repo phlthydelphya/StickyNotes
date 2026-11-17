@@ -10,6 +10,7 @@ Python + PyGObject, GTK 4 + libadwaita.
     ./install.sh                    # install to ~/.local (./install.sh --uninstall to remove)
     ./install.sh --autostart        # also reopen popped-out notes at login (runs --restore)
     ./install.sh --no-shortcut      # skip the global shortcuts on a fresh install
+    sudo ./install-search-provider.sh   # once: notes in GNOME's Activities search
 
 ## Features
 
@@ -30,6 +31,8 @@ Python + PyGObject, GTK 4 + libadwaita.
   Or type them: `- ` or `* ` for bullets, `[] ` for a checklist, `1. ` for numbers.
   A ticked item moves below the open ones; unticked, it moves back up.
 - Web addresses, email addresses and file paths are underlined; Ctrl+click opens them.
+- Activities search: after `sudo ./install-search-provider.sh` and a new login, typing in
+  GNOME's overview lists matching notes; choosing one opens it.
 - Screenshots: the camera button opens GNOME's screenshot UI (area, window or screen) through
   the xdg-desktop-portal and adds the shot to the note; the tray's "New Note from Screenshot"
   does the same in a new note. GNOME keeps its own copy in ~/Pictures/Screenshots.

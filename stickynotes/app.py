@@ -17,6 +17,7 @@ from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
 from .palette import COLORS, build_css  # noqa: E402
 from .preferences import Preferences, PreferencesDialog  # noqa: E402
+from .search_provider import SearchProvider  # noqa: E402
 from .store import LoadState, NoteStore  # noqa: E402
 from .tray import Tray  # noqa: E402
 
@@ -35,6 +36,9 @@ ACCELS = {
     "win.bullets": ["<Control><Shift>l"],
     "win.delete": ["<Control>d"],
 }
+# Started by GNOME Shell for a search (--gapplication-service): stay this long
+# after the last call, unless a window or the tray keeps the app running.
+SERVICE_TIMEOUT_MS = 15000
 UNDO_TIMEOUT_S = 8
 
 
@@ -59,7 +63,9 @@ class StickyApp(Adw.Application):
         self.tray = None
         self._held = False
         self._prefs_dialog = None
+        self._background = False  # tray started and hold decided
         self._pending_deletes = {}  # note id -> deleted note, while Undo is offered
+        self.search_provider = SearchProvider(self, APP_ID)
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -106,11 +112,35 @@ class StickyApp(Adw.Application):
         self.tray = Tray(self, APP_ID, "Sticky Notes",
                          icon_theme_path=str(source_icons) if from_checkout else "",
                          on_availability=self._on_tray_availability)
+        if self.get_flags() & Gio.ApplicationFlags.IS_SERVICE:
+            # Started for a desktop search: no tray icon unless a note is shown.
+            self.set_inactivity_timeout(SERVICE_TIMEOUT_MS)
+        else:
+            self._start_background()
+
+    def do_dbus_register(self, connection, object_path):
+        if not Adw.Application.do_dbus_register(self, connection, object_path):
+            return False
+        try:
+            self.search_provider.register(connection)
+        except GLib.Error as err:
+            print(f"dusk-sticky-notes: search provider not exported: {err.message}", file=sys.stderr)
+        return True
+
+    def do_dbus_unregister(self, connection, object_path):
+        self.search_provider.unregister()
+        Adw.Application.do_dbus_unregister(self, connection, object_path)
+
+    # --- background / tray -----------------------------------------------------
+    def _start_background(self):
+        """Show the tray icon and decide whether the app outlives its windows."""
+        if self._background:
+            return
+        self._background = True
         # Decide the hold now: with --restore and no open notes, an async check
         # would come too late and the app would exit before the icon appears.
         self._update_hold(self.tray.start())
 
-    # --- background / tray -----------------------------------------------------
     def _update_hold(self, tray_ok=None):
         """Stay alive with no windows only when close-to-tray is on and a tray exists."""
         if tray_ok is None:
@@ -255,6 +285,7 @@ class StickyApp(Adw.Application):
         if self.store.read_only:
             self._show_newer()
             return
+        self._start_background()
         if self.hub is None:
             self.hub = HubWindow(self)
             self.hub.connect("close-request", self._on_hub_closed)
@@ -294,6 +325,7 @@ class StickyApp(Adw.Application):
                 return
             if self.hub is not None:
                 self.hub.release_note(note_id)  # one editor per note
+            self._start_background()
             win = NoteWindow(self, note)
             self.note_windows[note_id] = win
             if not note.open:
@@ -356,6 +388,28 @@ class StickyApp(Adw.Application):
         elif note.color != color:
             note.color = color
             self.store.update(note, bump=False)
+
+    # --- desktop search (search_provider.py) ------------------------------------------
+    def activate_search_result(self, note_id, _timestamp=0):
+        if self.store.read_only:
+            self._show_newer()
+            return
+        self._restore()
+        note = self.store.get(note_id)
+        if note is not None and note.open:
+            self.open_note(note_id)
+            return
+        self.show_list()
+        if note is not None:
+            self.hub.edit_note(note_id)
+
+    def launch_search(self, terms, _timestamp=0):
+        if self.store.read_only:
+            self._show_newer()
+            return
+        self._restore()
+        self.show_list()
+        self.hub.set_search(" ".join(terms))
 
     # --- shutdown --------------------------------------------------------------
     def _flush_all(self):

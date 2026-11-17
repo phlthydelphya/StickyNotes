@@ -8,6 +8,8 @@
 #          remove the app, its autostart entry and shortcut
 #          (notes in ~/.local/share/dusk-sticky-notes stay)
 # Autostart and the shortcut can be changed later in the app's Preferences.
+# Notes in GNOME's Activities search also need, once, as root:
+#   sudo ./install-search-provider.sh
 set -euo pipefail
 
 AUTOSTART_OPT=0
@@ -30,6 +32,8 @@ DESKTOP="$HOME/.local/share/applications/$APP_ID.desktop"
 ICON="$HOME/.local/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 SYMBOLIC_ICON="$HOME/.local/share/icons/hicolor/symbolic/apps/$APP_ID-symbolic.svg"
 AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$APP_ID.desktop"
+# Lets GNOME Shell start the app for a search.
+DBUS_SERVICE="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/$APP_ID.service"
 
 # Same code the Preferences switches use (stickynotes/integration.py).
 integrate() {  # integrate <lib-dir> <python statements using `i`> [arg -> sys.argv[3]]
@@ -41,7 +45,7 @@ if (( UNINSTALL )); then
     integrate "$LIB" 'i.set_autostart(False); i.set_shortcut(False)' || true
   fi
   rm -rf -- "$LIB"
-  rm -f -- "$BIN" "$DESKTOP" "$ICON" "$SYMBOLIC_ICON" "$AUTOSTART"
+  rm -f -- "$BIN" "$DESKTOP" "$ICON" "$SYMBOLIC_ICON" "$AUTOSTART" "$DBUS_SERVICE"
   echo "Removed. Notes kept in ${XDG_DATA_HOME:-$HOME/.local/share}/dusk-sticky-notes"
   exit 0
 fi
@@ -94,6 +98,8 @@ ln -sf "$LIB/dusk-sticky-notes" "$BIN"
 install -m 644 "$SRC/data/$APP_ID.desktop" "$DESKTOP"
 install -m 644 "$SRC/data/$APP_ID.svg" "$ICON"
 install -D -m 644 "$SRC/data/$APP_ID-symbolic.svg" "$SYMBOLIC_ICON"
+mkdir -p "$(dirname "$DBUS_SERVICE")"
+printf '[D-BUS Service]\nName=%s\nExec="%s" --gapplication-service\n' "$APP_ID" "$BIN" > "$DBUS_SERVICE"
 update-desktop-database -q "$(dirname "$DESKTOP")" 2>/dev/null || true
 gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 if (( AUTOSTART_OPT )); then
@@ -118,3 +124,6 @@ elif (( SHORTCUT_OPT )); then
   fi
 fi
 echo "Installed. Run: dusk-sticky-notes"
+if [[ ! -e /usr/local/share/gnome-shell/search-providers/$APP_ID.search-provider.ini ]]; then
+  echo "For notes in the Activities search, run once: sudo $SRC/install-search-provider.sh"
+fi
