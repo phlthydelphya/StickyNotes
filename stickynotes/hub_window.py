@@ -13,6 +13,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 from . import note_menu  # noqa: E402
 from .note_editor import NoteEditor  # noqa: E402
 from .palette import COLORS, label  # noqa: E402
+from .reminders import describe  # noqa: E402
 from .richtext import checklist_progress  # noqa: E402
 from .selection import capture_text, read_selection  # noqa: E402
 
@@ -266,7 +267,7 @@ class HubWindow(Adw.ApplicationWindow):
         note = self.store.get(row.note_id)
         if note is None or (self._colors and note.color not in self._colors):
             return False
-        return self.store.matches(note, self._terms)  # every word, anywhere in the note
+        return self.store.matches(note, self._terms)  # words in the note or its images
 
     # --- cards -----------------------------------------------------------------------
     def _add_row(self, note):
@@ -276,6 +277,8 @@ class HubWindow(Adw.ApplicationWindow):
         pin = Gtk.Image(icon_name="view-pin-symbolic", tooltip_text="Pinned", visible=False)
         pin.add_css_class("card-chip")
         top.append(pin)
+        alarm = self._chip("alarm-symbolic")
+        top.append(alarm)
         progress = self._chip("checkbox-checked-symbolic")
         top.append(progress)
         stamp = Gtk.Label(xalign=1, hexpand=True)
@@ -304,7 +307,7 @@ class HubWindow(Adw.ApplicationWindow):
         row = Gtk.ListBoxRow(child=card, activatable=True)
         row.note_id = note.id
         row.card, row.stamp, row.popout = card, stamp, popout
-        row.pin, row.progress = pin, progress
+        row.pin, row.alarm, row.progress = pin, alarm, progress
         row.previews, row.compact = previews, compact
         row.color = None
         row.shown = None  # what the card last showed, to skip unchanged refreshes
@@ -335,12 +338,17 @@ class HubWindow(Adw.ApplicationWindow):
         chip.set_tooltip_text(tooltip)
 
     def _refresh_row(self, row, note):
-        shown = (note.modified, note.color, note.open, row.editor is not None, note.pinned)
+        shown = (note.modified, note.color, note.open, row.editor is not None, note.pinned,
+                 note.remind_at)
         if row.shown == shown:
             return
         row.shown = shown
         row.sort_key = (note.pinned, note.modified)
         row.pin.set_visible(note.pinned)
+        if note.remind_at is not None:
+            self._set_chip(row.alarm, describe(note.remind_at), "Reminder")
+        else:
+            self._set_chip(row.alarm, None)
         done, total = checklist_progress(note.plain_text())
         self._set_chip(row.progress, f"{done}/{total}" if total else None,
                        f"{done} of {total} ticked" if total else None)
@@ -568,7 +576,7 @@ class HubWindow(Adw.ApplicationWindow):
             self._open_menu(row, Graphene.Rect().init(point.x, point.y, 1, 1))
 
     def _open_menu(self, row, bounds):
-        """The note menu (colors, pin, pop out, delete) at bounds in row."""
+        """The note menu (colors, pin, reminder, pop out, delete) at bounds in row."""
         note = self.store.get(row.note_id)
         if note is None or bounds is None:
             return

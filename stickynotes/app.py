@@ -3,6 +3,7 @@
 
 import signal
 import sys
+import time
 from pathlib import Path
 
 import gi
@@ -15,8 +16,10 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from . import __version__  # noqa: E402
 from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
+from .ocr import OcrIndex  # noqa: E402
 from .palette import COLORS, build_css  # noqa: E402
 from .preferences import Preferences, PreferencesDialog  # noqa: E402
+from .reminders import SNOOZE_MINUTES, ReminderDialog, preset_time  # noqa: E402
 from .search_provider import SearchProvider  # noqa: E402
 from .store import LoadState, NoteStore  # noqa: E402
 from .tray import Tray  # noqa: E402
@@ -39,6 +42,9 @@ ACCELS = {
 # Started by GNOME Shell for a search (--gapplication-service): stay this long
 # after the last call, unless a window or the tray keeps the app running.
 SERVICE_TIMEOUT_MS = 15000
+# Reminders are checked against the wall clock at least this often, so a
+# suspended laptop still shows them soon after it wakes.
+REMINDER_CHECK_S = 60
 UNDO_TIMEOUT_S = 8
 
 
@@ -65,6 +71,8 @@ class StickyApp(Adw.Application):
         self._prefs_dialog = None
         self._background = False  # tray started and hold decided
         self._pending_deletes = {}  # note id -> deleted note, while Undo is offered
+        self._remind_source = 0
+        self.ocr = None
         self.search_provider = SearchProvider(self, APP_ID)
 
     def do_startup(self):
@@ -104,6 +112,11 @@ class StickyApp(Adw.Application):
         self._add_action("delete-note", lambda _a, p: self.delete_note(p.get_string()), "s")
         self._add_action("toggle-pin", lambda _a, p: self.toggle_pin(p.get_string()), "s")
         self._add_action("set-color", lambda _a, p: self.set_note_color(*p.unpack()), "(ss)")
+        self._add_action("remind", lambda _a, p: self.remind_preset(*p.unpack()), "(ss)")
+        self._add_action("remind-pick", lambda _a, p: self.pick_reminder(p.get_string()), "s")
+        self._add_action("remind-clear", lambda _a, p: self.set_reminder(p.get_string(), None), "s")
+        self._add_action("snooze-reminder", lambda _a, p: self.snooze(p.get_string()), "s")
+        self._add_action("reminder-done", lambda _a, p: self.reminder_done(p.get_string()), "s")
         for action, accels in ACCELS.items():
             self.set_accels_for_action(action, accels)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_sigterm)
@@ -112,6 +125,11 @@ class StickyApp(Adw.Application):
         self.tray = Tray(self, APP_ID, "Sticky Notes",
                          icon_theme_path=str(source_icons) if from_checkout else "",
                          on_availability=self._on_tray_availability)
+        if not self.store.read_only:
+            self.ocr = OcrIndex(self.store, on_update=self._on_image_text)
+            self.ocr.schedule_scan()
+            self.store.connect(self._on_note_changed)
+            self._schedule_reminders()
         if self.get_flags() & Gio.ApplicationFlags.IS_SERVICE:
             # Started for a desktop search: no tray icon unless a note is shown.
             self.set_inactivity_timeout(SERVICE_TIMEOUT_MS)
@@ -130,6 +148,15 @@ class StickyApp(Adw.Application):
     def do_dbus_unregister(self, connection, object_path):
         self.search_provider.unregister()
         Adw.Application.do_dbus_unregister(self, connection, object_path)
+
+    def _on_note_changed(self, _note_id):
+        self._schedule_reminders()
+        if self.ocr is not None:
+            self.ocr.schedule_scan()
+
+    def _on_image_text(self):
+        if self.hub is not None:
+            self.hub._schedule_rebuild()  # a search may now match the new text
 
     # --- background / tray -----------------------------------------------------
     def _start_background(self):
@@ -245,9 +272,10 @@ class StickyApp(Adw.Application):
             for note in getattr(self, "_pending_deletes", {}).values():
                 store.drop_images(note)  # Undo is gone with the app
         finally:
-            tray = getattr(self, "tray", None)
-            if tray is not None:
-                tray.stop()
+            for name in ("tray", "ocr"):
+                part = getattr(self, name, None)
+                if part is not None:
+                    part.stop()
             Adw.Application.do_shutdown(self)
 
     # --- windows -------------------------------------------------------------
@@ -372,6 +400,12 @@ class StickyApp(Adw.Application):
             self.store.drop_images(note)
 
     # --- note settings from the menus --------------------------------------------
+    def _message(self, text):
+        """A short message in the active window."""
+        show = getattr(self.get_active_window(), "_show_error", None)
+        if show is not None:
+            show(text)
+
     def toggle_pin(self, note_id):
         note = self.store.get(note_id)
         if note is not None:
@@ -388,6 +422,76 @@ class StickyApp(Adw.Application):
         elif note.color != color:
             note.color = color
             self.store.update(note, bump=False)
+
+    # --- reminders -----------------------------------------------------------------
+    def remind_preset(self, note_id, key):
+        when = preset_time(key)
+        if when is not None:
+            self.set_reminder(note_id, when)
+
+    def pick_reminder(self, note_id):
+        note = self.store.get(note_id)
+        if note is None:
+            return
+        dialog = ReminderDialog(note.remind_at, lambda when: self.set_reminder(note_id, when))
+        dialog.present(self.get_active_window())
+
+    def set_reminder(self, note_id, when):
+        note = self.store.get(note_id)
+        if note is None:
+            return
+        if when is not None and when <= time.time():
+            self._message("That time has already passed")
+            return
+        note.remind_at = when
+        self.store.update(note, bump=False)
+        self.withdraw_notification(f"reminder-{note_id}")
+
+    def snooze(self, note_id):
+        note = self.store.get(note_id)
+        if note is not None:
+            note.remind_at = time.time() + SNOOZE_MINUTES * 60
+            self.store.update(note, bump=False)
+
+    def reminder_done(self, note_id):
+        self.withdraw_notification(f"reminder-{note_id}")
+
+    def _schedule_reminders(self):
+        if self._remind_source:
+            GLib.source_remove(self._remind_source)
+            self._remind_source = 0
+        if self.store is None or self.store.read_only:
+            return
+        times = [n.remind_at for n in self.store.notes.values() if n.remind_at is not None]
+        if times:
+            wait = max(0.0, min(min(times) - time.time(), REMINDER_CHECK_S))
+            self._remind_source = GLib.timeout_add(int(wait * 1000), self._on_reminder_timeout)
+
+    def _on_reminder_timeout(self):
+        self._remind_source = 0
+        now = time.time()
+        for note in self.store.sorted():
+            if note.remind_at is not None and note.remind_at <= now:
+                self.fire_reminder(note)
+        self._schedule_reminders()
+        return GLib.SOURCE_REMOVE
+
+    def fire_reminder(self, note):
+        """Bring the note back: float it on top and send a notification."""
+        note.remind_at = None
+        self.store.update(note, bump=False)
+        self.open_note(note.id)
+        lines = [line for line in note.plain_text().replace("\ufffc", "").splitlines()
+                 if line.strip()]
+        notification = Gio.Notification.new("Sticky note reminder")
+        notification.set_body("\n".join(lines[:2]) or "Image note")
+        notification.set_priority(Gio.NotificationPriority.HIGH)
+        target = GLib.Variant("s", note.id)
+        notification.set_default_action_and_target("app.open-note", target)
+        notification.add_button_with_target(f"Snooze {SNOOZE_MINUTES} min",
+                                            "app.snooze-reminder", target)
+        notification.add_button_with_target("Done", "app.reminder-done", target)
+        self.send_notification(f"reminder-{note.id}", notification)
 
     # --- desktop search (search_provider.py) ------------------------------------------
     def activate_search_result(self, note_id, _timestamp=0):

@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pin, undo delete, typing shortcuts, checklists, links, desktop search and
-selection capture."""
+"""Pin, undo delete, reminders, typing shortcuts, checklists, links, image text,
+desktop search and selection capture."""
+import datetime
 import json
 import os
+import stat
 import uuid
 from types import SimpleNamespace
 
 import pytest
 
 from stickynotes.app import Adw, Gdk, Gio, GLib, Gtk, StickyApp
-from stickynotes import search_provider, selection
+from stickynotes import reminders, search_provider, selection
 from stickynotes.hub_window import HubWindow, REBUILD_DELAY_MS
+from stickynotes.ocr import OcrIndex
 from stickynotes.richtext import RichEditor, checklist_progress, link_target
 from stickynotes.store import NoteStore, validate
 
@@ -42,19 +45,21 @@ def note_with(store, text, **fields):
 
 
 # --- store ---------------------------------------------------------------------------
-def test_pin_round_trip_and_validate(tmp_path):
+def test_pin_and_reminder_round_trip_and_validate(tmp_path):
     store = NoteStore(tmp_path)
     store.load()
-    old = note_with(store, "old", pinned=True)
+    old = note_with(store, "old", pinned=True, remind_at=1900000000.5)
     new = note_with(store, "new")
     store.save_now()
     data = json.loads((tmp_path / "notes.json").read_text())
     saved = {n["id"]: n for n in data["notes"]}
-    assert saved[old.id]["pinned"] is True and "pinned" not in saved[new.id]
+    assert saved[old.id]["pinned"] is True and saved[old.id]["remind_at"] == 1900000000.5
+    assert "pinned" not in saved[new.id] and "remind_at" not in saved[new.id]
     again = NoteStore(tmp_path)
     again.load()
     assert [n.id for n in again.sorted()] == [old.id, new.id]  # pinned first
-    for bad in ({"pinned": "yes"}, {"pinned": 1}):
+    assert again.get(old.id).remind_at == 1900000000.5
+    for bad in ({"pinned": "yes"}, {"remind_at": "soon"}, {"remind_at": float("inf")}):
         with pytest.raises(ValueError):
             validate({"version": 1, "notes": [dict({"id": "x", "content": []}, **bad)]})
 
@@ -78,13 +83,14 @@ def test_deleted_note_keeps_images_until_undo_window_ends(tmp_path):
     assert not store.image_path("a.png").exists()
 
 
-def test_search_matches_every_word(tmp_path):
+def test_search_matches_every_word_in_text_or_images(tmp_path):
     store = NoteStore(tmp_path)
     store.load()
     note = store.create()
-    note.content = [{"t": "Groceries list"}]
-    assert store.matches(note, ["groceries"]) and store.matches(note, ["list", "groceries"])
-    assert not store.matches(note, ["list", "missing"])
+    note.content = [{"t": "Groceries list"}, {"img": "shot.png"}]
+    store.image_text["shot.png"] = "INVOICE 42 total"
+    assert store.matches(note, ["groceries"]) and store.matches(note, ["invoice", "list"])
+    assert not store.matches(note, ["invoice", "missing"])
 
 
 # --- rich text ---------------------------------------------------------------------------
@@ -162,6 +168,95 @@ def test_links_are_found_and_ctrl_click_targets():
     assert ed.link_at(end) == "www.example.org"
 
 
+# --- reminders ---------------------------------------------------------------------------
+def test_reminder_presets_and_labels():
+    monday_noon = datetime.datetime(2026, 11, 16, 12, 0)  # a Monday
+    keys = [key for key, _text, _ts in reminders.presets(monday_noon)]
+    assert keys == ["hour", "evening", "tomorrow", "week"]
+    late = datetime.datetime(2026, 11, 16, 17, 30)
+    assert "evening" not in [key for key, *_ in reminders.presets(late)]
+    week = reminders.preset_time("week", monday_noon)
+    assert datetime.datetime.fromtimestamp(week) == datetime.datetime(2026, 11, 23, 9, 0)
+    tomorrow = reminders.preset_time("tomorrow", monday_noon)
+    assert reminders.describe(tomorrow, monday_noon) == "Tomorrow 09:00"
+    assert reminders.describe(monday_noon.timestamp() + 3600, monday_noon) == "13:00"
+    assert reminders.describe(week, monday_noon) == "Mon 23 Nov 09:00"
+
+
+def reminder_app(store):
+    events = []
+    obj = SimpleNamespace(store=store, _remind_source=0, events=events,
+                          open_note=lambda nid: events.append(("open", nid)),
+                          send_notification=lambda nid, n: events.append(("notify", nid, n)),
+                          withdraw_notification=lambda nid: events.append(("withdraw", nid)),
+                          _message=lambda text: events.append(("message", text)))
+    for name in ("_schedule_reminders", "_on_reminder_timeout", "fire_reminder", "snooze",
+                 "set_reminder", "reminder_done"):
+        setattr(obj, name, lambda *a, name=name: getattr(StickyApp, name)(obj, *a))
+    return obj
+
+
+def test_due_reminder_pops_note_out_and_notifies(tmp_path):
+    store = NoteStore(tmp_path)
+    store.load()
+    due = note_with(store, "Call the bank\nabout the card", remind_at=1.0)
+    later = note_with(store, "later", remind_at=4102444800.0)
+    obj = reminder_app(store)
+    obj._on_reminder_timeout()
+    assert ("open", due.id) in obj.events and due.remind_at is None
+    notify = [e for e in obj.events if e[0] == "notify"]
+    assert len(notify) == 1 and notify[0][1] == f"reminder-{due.id}"
+    assert later.remind_at == 4102444800.0 and obj._remind_source  # next one waits
+    obj.snooze(due.id)
+    assert due.remind_at > 1.0
+    obj.set_reminder(later.id, 5.0)  # in the past
+    assert ("message", "That time has already passed") in obj.events
+    assert later.remind_at == 4102444800.0
+    GLib.source_remove(obj._remind_source)
+
+
+# --- image text ------------------------------------------------------------------------------
+def fake_tesseract(tmp_path, output, code=0):
+    program = tmp_path / "tesseract"
+    program.write_text(f"#!/bin/sh\nprintf '%s' '{output}'\nexit {code}\n")
+    program.chmod(program.stat().st_mode | stat.S_IEXEC)
+    return str(program)
+
+
+def test_image_text_is_read_once_cached_and_pruned(tmp_path):
+    store = NoteStore(tmp_path / "data")
+    store.load()
+    note = store.create()
+    note.content = [{"img": "a.png"}]
+    store.image_path("a.png").write_bytes(b"x")
+    cache = tmp_path / "cache" / "image-text.json"
+    updates = []
+    index = OcrIndex(store, cache, fake_tesseract(tmp_path, "INVOICE\n  42  "),
+                     on_update=lambda: updates.append(1))
+    index.scan()
+    assert run_until(lambda: "a.png" in store.image_text)
+    assert store.image_text["a.png"] == "INVOICE 42" and updates == [1]
+    assert store.matches(note, ["invoice"])
+    index.stop()  # writes the cache now
+    assert json.loads(cache.read_text()) == {"a.png": "INVOICE 42"}
+    store.delete(note.id)
+    again = OcrIndex(store, cache, program="")
+    assert not again.available and again.texts == {"a.png": "INVOICE 42"}
+    again._save()
+    assert json.loads(cache.read_text()) == {}  # the image is gone
+
+
+def test_unreadable_image_is_not_retried(tmp_path):
+    store = NoteStore(tmp_path / "data")
+    store.load()
+    note = store.create()
+    note.content = [{"img": "a.png"}]
+    index = OcrIndex(store, tmp_path / "c.json", fake_tesseract(tmp_path, "", code=1))
+    index.scan()
+    assert run_until(lambda: index._running is None and index._failed)
+    assert index.pending() == [] and "a.png" not in store.image_text
+
+
 # --- desktop search ----------------------------------------------------------------------------
 def test_search_provider_results_and_metas(tmp_path):
     store = NoteStore(tmp_path)
@@ -169,15 +264,18 @@ def test_search_provider_results_and_metas(tmp_path):
     shop = note_with(store, "Shopping\n☐ milk\n☐ bread")
     pic = store.create()
     pic.content = [{"img": "x.png"}]
+    store.image_text["x.png"] = "boarding pass gate 12"
     store.update(pic)
     note_with(store, "unrelated")
     assert search_provider.find(store, ["MILK"]) == [shop.id]
+    assert search_provider.find(store, ["gate", "pass"]) == [pic.id]
     assert search_provider.find(store, ["milk"], among=[pic.id]) == []
     assert search_provider.find(store, ["  "]) == []
     meta = search_provider.meta(store, shop, "icon")
     assert meta["name"].unpack() == "Shopping" and meta["description"].unpack() == "☐ milk · ☐ bread"
     meta = search_provider.meta(store, pic, "icon")
-    assert meta["name"].unpack() == "Image note" and "description" not in meta
+    assert meta["name"].unpack() == "Image note"
+    assert meta["description"].unpack() == "boarding pass gate 12"
 
 
 def test_search_provider_over_dbus(tmp_path):
@@ -271,12 +369,14 @@ def test_pinned_first_color_chips_and_card_chips(hub_app):
     advance()
     assert [r.note_id for r in rows(hub)] == [new.id, old.id]
     old.pinned = True
+    old.remind_at = 4102444800.0
     store.update(old, bump=False)
     advance(REBUILD_DELAY_MS * 2)
     first = rows(hub)[0]
     assert first.note_id == old.id and first.pin.get_visible()
     assert first.progress.get_visible() and first.progress.text.get_label() == "1/2"
-    assert not rows(hub)[1].pin.get_visible() and not rows(hub)[1].progress.get_visible()
+    assert first.alarm.get_visible() and first.alarm.text.get_label()
+    assert not rows(hub)[1].alarm.get_visible() and not rows(hub)[1].progress.get_visible()
 
     hub.search_bar.set_search_mode(True)
     hub.color_chips["pink"].set_active(True)
@@ -293,7 +393,7 @@ def test_pinned_first_color_chips_and_card_chips(hub_app):
     hub.close()
 
 
-def test_card_menu_has_colors_and_pin(hub_app):
+def test_card_menu_has_colors_pin_and_reminders(hub_app):
     note = note_with(hub_app.store, "menu note")
     hub = HubWindow(hub_app)
     hub.present()
@@ -307,8 +407,8 @@ def test_card_menu_has_colors_and_pin(hub_app):
         link = model.get_item_link(section, "section")
         for i in range(link.get_n_items()):
             labels.append(link.get_item_attribute_value(i, "label", None))
-    assert labels[1:] == [GLib.Variant("s", "Pin to Top"), GLib.Variant("s", "Pop Out"),
-                          GLib.Variant("s", "Delete Note")]
+    assert labels[1:] == [GLib.Variant("s", "Pin to Top"), GLib.Variant("s", "Remind Me"),
+                          GLib.Variant("s", "Pop Out"), GLib.Variant("s", "Delete Note")]
     menu.popdown()
     advance()
     hub.close()

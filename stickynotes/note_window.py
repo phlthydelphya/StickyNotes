@@ -50,7 +50,7 @@ class NoteWindow(Adw.Window):
         close = Gtk.Button(icon_name="window-close-symbolic", tooltip_text="Close (Ctrl+W)",
                            action_name="window.close")
         header.pack_end(close)
-        # Built on every open, so the pin entry shows the current state.
+        # Built on every open, so pin and reminder entries show the current state.
         self.menu_button = Gtk.MenuButton(icon_name="view-more-symbolic", tooltip_text="Menu")
         self.menu_button.set_create_popup_func(self._build_menu)
         header.pack_end(self.menu_button)

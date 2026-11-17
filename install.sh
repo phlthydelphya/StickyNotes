@@ -32,7 +32,7 @@ DESKTOP="$HOME/.local/share/applications/$APP_ID.desktop"
 ICON="$HOME/.local/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 SYMBOLIC_ICON="$HOME/.local/share/icons/hicolor/symbolic/apps/$APP_ID-symbolic.svg"
 AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$APP_ID.desktop"
-# Lets GNOME Shell start the app for a search.
+# Lets GNOME Shell start the app for a search, or for a reminder's buttons.
 DBUS_SERVICE="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/$APP_ID.service"
 
 # Same code the Preferences switches use (stickynotes/integration.py).

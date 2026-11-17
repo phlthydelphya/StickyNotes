@@ -60,6 +60,9 @@ def validate(data):
         for key in ("open", "pinned"):
             if key in note and type(note[key]) is not bool:
                 raise ValueError(f"Invalid {key} state")
+        remind = note.get("remind_at")
+        if remind is not None and (type(remind) not in (int, float) or not math.isfinite(remind)):
+            raise ValueError("Invalid reminder")
 
 
 def default_root():
@@ -68,7 +71,8 @@ def default_root():
 
 class Note:
     def __init__(self, id=None, color=DEFAULT_COLOR, content=None, created=None,
-                 modified=None, open=False, width=320, height=320, pinned=False):
+                 modified=None, open=False, width=320, height=320, pinned=False,
+                 remind_at=None):
         now = time.time()
         self.id = id or uuid.uuid4().hex
         self.color = color if color in COLORS else DEFAULT_COLOR
@@ -80,6 +84,7 @@ class Note:
         self.width = width
         self.height = height
         self.pinned = pinned  # kept at the top of the notes list
+        self.remind_at = remind_at  # epoch seconds; the note pops out then
 
     @classmethod
     def from_dict(cls, d):
@@ -87,7 +92,7 @@ class Note:
                    content=d.get("content", []), created=d.get("created"),
                    modified=d.get("modified"), open=d.get("open", False),
                    width=d.get("width", 320), height=d.get("height", 320),
-                   pinned=d.get("pinned", False))
+                   pinned=d.get("pinned", False), remind_at=d.get("remind_at"))
 
     def to_dict(self):
         d = {"id": self.id, "color": self.color, "content": self.content,
@@ -96,6 +101,8 @@ class Note:
         # Optional keys are written only when set; version 1 readers ignore them.
         if self.pinned:
             d["pinned"] = True
+        if self.remind_at is not None:
+            d["remind_at"] = self.remind_at
         return d
 
     def plain_text(self):
@@ -122,6 +129,8 @@ class NoteStore:
         self.last_error = None
         self.unsaved = False
         self._save_listeners = {}
+        # Text read from images (OCR), by image name; filled by ocr.OcrIndex.
+        self.image_text = {}
 
     # --- persistence -------------------------------------------------------
     def load(self):
@@ -243,9 +252,15 @@ class NoteStore:
         """Pinned notes first, then newest first."""
         return sorted(self.notes.values(), key=lambda n: (n.pinned, n.modified), reverse=True)
 
+    def search_text(self, note):
+        """Lowercase text a search looks through: the note's words and its images' text."""
+        parts = [note.plain_text()]
+        parts.extend(self.image_text.get(name, "") for name in note.images())
+        return "\n".join(parts).lower()
+
     def matches(self, note, terms):
-        """True when every (lowercase) term appears in the note."""
-        text = note.plain_text().lower()
+        """True when every (lowercase) term appears in the note or its images."""
+        text = self.search_text(note)
         return all(term in text for term in terms)
 
     def create(self, color=None):

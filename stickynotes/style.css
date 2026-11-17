@@ -120,7 +120,7 @@ window.sticky .format-bar menubutton.in-list > button,
   background-color: alpha(currentColor, 0.14);
 }
 
-/* Pin and checklist progress on a card's top line. */
+/* Pin, reminder and checklist progress on a card's top line. */
 .note-card .card-chip {
   opacity: 0.75;
 }

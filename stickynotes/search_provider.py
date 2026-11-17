@@ -58,13 +58,14 @@ def find(store, terms, among=None):
 
 
 def meta(store, note, icon):
-    """Name is the first line; the description is the rest."""
+    """Name is the first line; the description is the rest, or the image text."""
     lines = [line.strip() for line in note.plain_text().replace("￼", "").splitlines()
              if line.strip()]
     if lines:
         name, rest = lines[0], " · ".join(lines[1:])
     else:
-        name, rest = "Image note", ""
+        name = "Image note"
+        rest = " ".join(store.image_text.get(img, "") for img in note.images()).strip()
     result = {"id": GLib.Variant("s", note.id), "name": GLib.Variant("s", name[:80]),
               "gicon": GLib.Variant("s", icon)}
     if rest:

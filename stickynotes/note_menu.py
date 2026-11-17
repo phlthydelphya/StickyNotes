@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The per-note menu, shared by the list cards and popped-out note windows:
-colors, pin and the host's own items. Built fresh on every open."""
+colors, pin, reminder, and the host's own items. Built fresh on every open."""
 
 from gi.repository import Gio, GLib, Gtk
 
 from .palette import COLORS, label
+from .reminders import describe, presets
 
 UNTARGETED = {"app.show-list", "app.about", "app.new-note"}
 
@@ -29,6 +30,16 @@ def build_menu(note, extra):
 
     section = Gio.Menu()
     section.append_item(_item("Unpin" if note.pinned else "Pin to Top", "app.toggle-pin", nid))
+    remind = Gio.Menu()
+    for key, text, _ts in presets():
+        remind.append_item(_item(text, "app.remind", GLib.Variant("(ss)", (note.id, key))))
+    remind.append_item(_item("Pick a Time…", "app.remind-pick", nid))
+    if note.remind_at is not None:
+        cancel = Gio.Menu()
+        cancel.append_item(_item("Remove Reminder", "app.remind-clear", nid))
+        remind.append_section(None, cancel)
+    title = f"Reminder: {describe(note.remind_at)}" if note.remind_at is not None else "Remind Me"
+    section.append_submenu(title, remind)
     menu.append_section(None, section)
 
     section = Gio.Menu()

@@ -16,12 +16,16 @@ Python + PyGObject, GTK 4 + libadwaita.
 
 - Notes live in the notes list, with search (type to search, Ctrl+F). Cards are compact;
   click one (or press Enter) to edit it in place, Escape to close it again.
-- Search matches every word you type. The color chips under the search entry show only
-  notes of those colors.
+- Search matches every word you type, in the note and in the text of its images. The color
+  chips under the search entry show only notes of those colors.
 - Each card's menu (the ⋯ button or a right click) has the note colors, Pin to Top,
-  Pop Out and Delete Note. A card shows its pin and how many checklist items are
-  ticked ("2/5").
+  Remind Me, Pop Out and Delete Note. A card shows its pin, its reminder time and how many
+  checklist items are ticked ("2/5").
 - Deleting a note shows "Note deleted" with Undo for a few seconds, instead of asking first.
+- Reminders: pick In 1 hour, This evening, Tomorrow morning, Next week or any time. When it
+  comes, the note pops out and a notification offers Snooze (10 min) and Done. Reminders
+  need Sticky Notes running (it stays in the tray); one missed while it was closed shows
+  at the next start.
 - The pop-out button on a card floats that note in its own window; its card stays in the
   list and the button brings the window forward. Closing the window puts it back.
 - Each new note gets a random note color.
@@ -31,6 +35,8 @@ Python + PyGObject, GTK 4 + libadwaita.
   Or type them: `- ` or `* ` for bullets, `[] ` for a checklist, `1. ` for numbers.
   A ticked item moves below the open ones; unticked, it moves back up.
 - Web addresses, email addresses and file paths are underlined; Ctrl+click opens them.
+- Text in images: with `tesseract` installed (`tesseract-ocr` package), screenshots and
+  pictures are read in the background so a search finds the words in them.
 - Activities search: after `sudo ./install-search-provider.sh` and a new login, typing in
   GNOME's overview lists matching notes; choosing one opens it.
 - Screenshots: the camera button opens GNOME's screenshot UI (area, window or screen) through
@@ -66,7 +72,8 @@ Python + PyGObject, GTK 4 + libadwaita.
 ## Data
 
 `$XDG_DATA_HOME/dusk-sticky-notes/notes.json` plus `images/`. Writes are atomic.
-Pins are an optional key in the same version-1 format.
+Pins and reminders are optional keys in the same version-1 format. Text read from
+images is a cache in `$XDG_CACHE_HOME/dusk-sticky-notes/image-text.json`.
 Invalid version-1 data is preserved as `notes.json.corrupt-<time>`; its images
 are left untouched. Newer formats open a warning and exit without modifying notes.
 
