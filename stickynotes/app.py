@@ -35,6 +35,7 @@ ACCELS = {
     "win.bullets": ["<Control><Shift>l"],
     "win.delete": ["<Control>d"],
 }
+UNDO_TIMEOUT_S = 8
 
 
 class StickyApp(Adw.Application):
@@ -56,6 +57,7 @@ class StickyApp(Adw.Application):
         self.tray = None
         self._held = False
         self._prefs_dialog = None
+        self._pending_deletes = {}  # note id -> deleted note, while Undo is offered
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -92,6 +94,7 @@ class StickyApp(Adw.Application):
         self._add_action("preferences", lambda *_: self.show_preferences())
         self._add_action("open-note", lambda _a, p: self.open_note(p.get_string()), "s")
         self._add_action("delete-note", lambda _a, p: self.delete_note(p.get_string()), "s")
+        self._add_action("toggle-pin", lambda _a, p: self.toggle_pin(p.get_string()), "s")
         self._add_action("set-color", lambda _a, p: self.set_note_color(*p.unpack()), "(ss)")
         for action, accels in ACCELS.items():
             self.set_accels_for_action(action, accels)
@@ -203,6 +206,9 @@ class StickyApp(Adw.Application):
     def do_shutdown(self):
         try:
             self._save_for_shutdown()
+            store = getattr(self, "store", None)
+            for note in getattr(self, "_pending_deletes", {}).values():
+                store.drop_images(note)  # Undo is gone with the app
         finally:
             tray = getattr(self, "tray", None)
             if tray is not None:
@@ -292,29 +298,47 @@ class StickyApp(Adw.Application):
         self.note_windows.pop(note_id, None)
 
     def delete_note(self, note_id):
+        """Delete at once; the notes list offers Undo for a few seconds."""
+        note = self.store.get(note_id)
+        if note is None:
+            return
         win = self.note_windows.get(note_id)
         if win is not None:
-            win.present()
-            win.confirm_delete()
-            return
-        note = self.store.get(note_id)
-        if note is None or self.hub is None:
-            return
-        dialog = Adw.AlertDialog(heading="Delete this note?",
-                                 body="The note will be removed permanently.")
-        dialog.add_response("cancel", "Keep")
-        dialog.add_response("delete", "Delete")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("cancel")
-        dialog.connect("response", lambda _d, r: r == "delete" and self._delete_now(note_id))
-        dialog.present(self.hub)
-
-    def _delete_now(self, note_id):
-        if self.hub is not None:
+            win.close_for_delete()  # saves its last edit, then closes
+        elif self.hub is not None:
             self.hub.release_note(note_id)  # saves an edit open in the list
-        self.store.delete(note_id)
+        if note.is_empty():
+            self.store.delete(note_id)  # nothing to bring back
+            return
+        self.store.delete(note_id, keep_images=True)
+        self._pending_deletes[note_id] = note
+        self.show_list()
+        toast = Adw.Toast(title="Note deleted", button_label="Undo", timeout=UNDO_TIMEOUT_S,
+                          priority=Adw.ToastPriority.HIGH)
+        toast.connect("button-clicked", lambda *_: self.undo_delete(note_id))
+        toast.connect("dismissed", lambda *_: self._forget_delete(note_id))
+        self.hub.add_toast(toast)
+
+    def undo_delete(self, note_id):
+        note = self._pending_deletes.pop(note_id, None)
+        if note is None:
+            return
+        self.store.restore(note)
+        if note.open:
+            self.open_note(note_id)  # it was popped out: float it again
+
+    def _forget_delete(self, note_id):
+        note = self._pending_deletes.pop(note_id, None)
+        if note is not None:
+            self.store.drop_images(note)
 
     # --- note settings from the menus --------------------------------------------
+    def toggle_pin(self, note_id):
+        note = self.store.get(note_id)
+        if note is not None:
+            note.pinned = not note.pinned
+            self.store.update(note, bump=False)
+
     def set_note_color(self, note_id, color):
         note = self.store.get(note_id)
         if note is None or color not in COLORS:

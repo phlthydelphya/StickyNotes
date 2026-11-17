@@ -119,3 +119,25 @@ window.sticky .format-bar menubutton.in-list > button,
 .note-list > row.popped-out .card-button {
   background-color: alpha(currentColor, 0.14);
 }
+
+/* Pin and checklist progress on a card's top line. */
+.note-card .card-chip {
+  opacity: 0.75;
+}
+
+.note-card .card-chip image {
+  -gtk-icon-size: 12px;
+}
+
+/* Color filter chips under the search entry. */
+.color-chips .swatch {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid alpha(currentColor, 0.25);
+}
+
+.color-chips .swatch:checked {
+  box-shadow: 0 0 0 2px @accent_bg_color;
+}

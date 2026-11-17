@@ -3,7 +3,7 @@
 
 import re
 
-from gi.repository import Gdk, GObject, Gtk, Pango
+from gi.repository import Gdk, GLib, GObject, Gtk, Pango
 
 TAGS = ("bold", "italic", "underline", "strike")
 BULLET = "• "
@@ -12,6 +12,14 @@ CHECK_DONE = "☑ "
 NUMBER = re.compile(r"(\d{1,4})\. ")
 LIST_STYLES = ("bullet", "number", "check")
 IMAGE_MAX_WIDTH = 260
+# Typed at the start of a line, then a space: becomes that list marker.
+TYPED_MARKERS = {"- ": BULLET, "* ": BULLET, "[] ": CHECK_OPEN, "[ ] ": CHECK_OPEN,
+                 "[x] ": CHECK_DONE, "[X] ": CHECK_DONE}
+# Web and mail addresses, and absolute or home-relative file paths.
+LINK = re.compile(
+    r"(?:https?://|www\.)[^\s<>\"']*[^\s<>\"'.,;:!?)\]}]"
+    r"|[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}"
+    r"|(?<![\w/~.:])~?/[\w.-]+(?:/[\w.-]+)*/?(?<![.,;:])")
 
 
 def line_prefix(text):
@@ -35,6 +43,24 @@ def marker(style, number=1):
     return CHECK_OPEN if style == "check" else BULLET
 
 
+def checklist_progress(text):
+    """(ticked, total) checklist items in plain text."""
+    lines = text.splitlines()
+    total = sum(line.startswith((CHECK_OPEN, CHECK_DONE)) for line in lines)
+    return sum(line.startswith(CHECK_DONE) for line in lines), total
+
+
+def link_target(text):
+    """What opening a detected link opens: a URI, or a local path."""
+    if text.startswith(("/", "~")):
+        return text
+    if "://" in text:
+        return text
+    if text.startswith("www."):
+        return "https://" + text
+    return "mailto:" + text
+
+
 def install_tags(buffer):
     table = buffer.get_tag_table()
     if table.lookup("bold"):
@@ -43,6 +69,8 @@ def install_tags(buffer):
     buffer.create_tag("italic", style=Pango.Style.ITALIC)
     buffer.create_tag("underline", underline=Pango.Underline.SINGLE)
     buffer.create_tag("strike", strikethrough=True)
+    # Not in TAGS: links are found again from the text, never saved.
+    buffer.create_tag("link", underline=Pango.Underline.SINGLE)
 
 
 def serialize(buffer, anchor_files):
@@ -91,6 +119,7 @@ class RichEditor(GObject.Object):
     __gsignals__ = {
         "state-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "content-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "link-activated": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     def __init__(self, view, resolve_image_path):
@@ -101,7 +130,9 @@ class RichEditor(GObject.Object):
         self.anchor_files = {}
         self.typing = set()
         self._loading = False
+        self._links_source = 0
         install_tags(self.buf)
+        self.link_tag = self.buf.get_tag_table().lookup("link")
         self.buf.connect_after("insert-text", self._on_insert_text)
         self.buf.connect("changed", self._on_changed)
         self.buf.connect("mark-set", self._on_mark_set)
@@ -111,6 +142,10 @@ class RichEditor(GObject.Object):
         click = Gtk.GestureClick(button=Gdk.BUTTON_PRIMARY)
         click.connect("pressed", self._on_click)
         view.add_controller(click)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("motion", self._on_motion)
+        view.add_controller(motion)
+        view.connect("destroy", lambda *_: self._cancel_links())
 
     # --- load / save ---------------------------------------------------------
     def load(self, segs):
@@ -119,6 +154,7 @@ class RichEditor(GObject.Object):
         deserialize(self.buf, segs, self.insert_image)
         self._loading = False
         self.buf.place_cursor(self.buf.get_end_iter())
+        self.mark_links()
 
     def dump(self):
         return serialize(self.buf, self.anchor_files)
@@ -126,17 +162,76 @@ class RichEditor(GObject.Object):
     def _on_changed(self, _buf):
         if not self._loading:
             self.emit("content-changed")
+            if not self._links_source:
+                self._links_source = GLib.idle_add(self._links_idle)
+
+    # --- links -------------------------------------------------------------------
+    def _links_idle(self):
+        self._links_source = 0
+        self.mark_links()
+        return GLib.SOURCE_REMOVE
+
+    def _cancel_links(self):
+        if self._links_source:
+            GLib.source_remove(self._links_source)
+            self._links_source = 0
+
+    def mark_links(self):
+        """Underline every address and path in the text (notes are short: rescan all)."""
+        start, end = self.buf.get_bounds()
+        self.buf.remove_tag(self.link_tag, start, end)
+        text = self.buf.get_slice(start, end, True)  # offsets match the buffer
+        for match in LINK.finditer(text):
+            self.buf.apply_tag(self.link_tag, self.buf.get_iter_at_offset(match.start()),
+                               self.buf.get_iter_at_offset(match.end()))
+
+    def link_at(self, it):
+        """The link text around it, or None."""
+        if not it.has_tag(self.link_tag):
+            return None
+        start, end = it.copy(), it.copy()
+        if not start.starts_tag(self.link_tag):
+            start.backward_to_tag_toggle(self.link_tag)
+        end.forward_to_tag_toggle(self.link_tag)
+        return self.buf.get_text(start, end, False)
+
+    def _iter_at_point(self, x, y):
+        bx, by = self.view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, int(x), int(y))
+        found, it = self.view.get_iter_at_location(bx, by)
+        return it if found else None
+
+    def _on_motion(self, _controller, x, y):
+        it = self._iter_at_point(x, y)
+        over = it is not None and it.has_tag(self.link_tag)
+        self.view.set_cursor_from_name("pointer" if over else "text")
+        self.view.set_tooltip_text("Ctrl+click to open" if over else None)
 
     # --- typing formatting -----------------------------------------------------
     def _on_insert_text(self, buf, location, text, _length):
-        if self._loading or not self.typing:
+        if self._loading:
+            return
+        if self.typing:
+            mark = buf.create_mark(None, location, False)
+            start = location.copy()
+            start.backward_chars(len(text))
+            for name in self.typing:
+                buf.apply_tag_by_name(name, start, location)
+            # Tag changes invalidate iterators; hand GTK back a valid one.
+            location.assign(buf.get_iter_at_mark(mark))
+            buf.delete_mark(mark)
+        if text == " ":
+            self._typed_marker(buf, location)
+
+    def _typed_marker(self, buf, location):
+        """"- ", "* ", "[] " or "[x] " typed at a line start becomes a list marker."""
+        start = location.copy()
+        start.set_line_offset(0)
+        marker_text = TYPED_MARKERS.get(buf.get_slice(start, location, True))
+        if marker_text is None:
             return
         mark = buf.create_mark(None, location, False)
-        start = location.copy()
-        start.backward_chars(len(text))
-        for name in self.typing:
-            buf.apply_tag_by_name(name, start, location)
-        # Tag changes invalidate iterators; hand GTK back a valid one.
+        buf.delete(start, location)
+        buf.insert(start, marker_text)
         location.assign(buf.get_iter_at_mark(mark))
         buf.delete_mark(mark)
 
@@ -246,22 +341,79 @@ class RichEditor(GObject.Object):
             expected += 1
             line += 1
 
+    def _is_done(self, line):
+        start = self._line_start(line)
+        return start.get_char() == CHECK_DONE[0] and self._prefix(line)[0] == "check"
+
     def toggle_check(self, line):
+        """Tick or untick an item. A ticked item sinks below the open ones in its
+        checklist; an unticked one rises back above the ticked ones."""
         style, length, _num = self._prefix(line)
         if style != "check":
             return
-        start = self._line_start(line)
-        end = start.copy()
-        end.forward_chars(length)
-        done = self.buf.get_text(start, end, False) == CHECK_DONE
+        done = self._is_done(line)
         self.buf.begin_user_action()
         self._replace_prefix(line, length, CHECK_OPEN if done else CHECK_DONE)
+        first = last = line
+        while first > 0 and self._prefix(first - 1)[0] == "check":
+            first -= 1
+        while last + 1 < self.buf.get_line_count() and self._prefix(last + 1)[0] == "check":
+            last += 1
+        others = [n for n in range(first, last + 1) if n != line]
+        if not done:  # now ticked: just below the last open item
+            open_below = [n for n in others if n > line and not self._is_done(n)]
+            if open_below:
+                self._move_line(line, open_below[-1])
+        else:  # now open: above every ticked item
+            ticked = [n for n in others if self._is_done(n)]
+            if ticked and ticked[0] < line:
+                self._move_line(line, ticked[0])
         self.buf.end_user_action()
 
+    def _move_line(self, src, dst):
+        """Move line src, formatting included, so it becomes line dst."""
+        start = self._line_start(src)
+        end = start.copy()
+        if not end.ends_line():
+            end.forward_to_line_end()
+        if "\ufffc" in self.buf.get_slice(start, end, True):
+            return  # holds an image: leave it where it is
+        first = self.buf.create_mark(None, start, True)
+        last = self.buf.create_mark(None, end, False)
+        at = self._line_start(dst)
+        if dst > src:  # after line dst: "\n" + copy
+            if not at.ends_line():
+                at.forward_to_line_end()
+            spot = self.buf.create_mark(None, at, False)
+            self.buf.insert(at, "\n")
+            self.buf.insert_range(self.buf.get_iter_at_mark(spot),
+                                  self.buf.get_iter_at_mark(first), self.buf.get_iter_at_mark(last))
+        else:  # before line dst: copy + "\n"
+            spot = self.buf.create_mark(None, at, False)
+            self.buf.insert_range(at, self.buf.get_iter_at_mark(first), self.buf.get_iter_at_mark(last))
+            self.buf.insert(self.buf.get_iter_at_mark(spot), "\n")
+        self.buf.delete_mark(spot)
+        cut_start = self.buf.get_iter_at_mark(first)
+        cut_end = self.buf.get_iter_at_mark(last)
+        if cut_end.is_end():
+            cut_start.backward_char()  # the last line: take the newline before it
+        else:
+            cut_end.forward_char()  # and its own newline
+        self.buf.delete(cut_start, cut_end)
+        self.buf.delete_mark(first)
+        self.buf.delete_mark(last)
+
     def _on_click(self, gesture, _n_press, x, y):
-        bx, by = self.view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, int(x), int(y))
-        found, it = self.view.get_iter_at_location(bx, by)
-        if found and it.get_line_offset() == 0 and it.get_char() in (CHECK_OPEN[0], CHECK_DONE[0]):
+        it = self._iter_at_point(x, y)
+        if it is None:
+            return
+        if gesture.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK:
+            link = self.link_at(it)
+            if link:
+                gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+                self.emit("link-activated", link_target(link))
+                return
+        if it.get_line_offset() == 0 and it.get_char() in (CHECK_OPEN[0], CHECK_DONE[0]):
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
             self.toggle_check(it.get_line())
 

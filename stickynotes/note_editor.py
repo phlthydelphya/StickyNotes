@@ -3,6 +3,7 @@
 
 Shared by the floating note window and the expanded card in the notes list."""
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -59,6 +60,7 @@ class NoteEditor:
         self.actions = self._build_actions()
         self.rich.connect("content-changed", self._on_content_changed)
         self.rich.connect("state-changed", lambda *_: self._sync_format_state())
+        self.rich.connect("link-activated", self._on_link)
         self._sync_format_state()
 
     # --- UI ------------------------------------------------------------------
@@ -171,6 +173,27 @@ class NoteEditor:
 
     def is_blank(self):
         return not any(seg.get("t", "").strip() or "img" in seg for seg in self.rich.dump())
+
+    # --- links -------------------------------------------------------------------
+    def _on_link(self, _rich, target):
+        root = self.view.get_root()
+        if target.startswith(("/", "~")):
+            path = os.path.expanduser(target)
+            if not os.path.exists(path):
+                self._on_error(f"{target} does not exist")
+                return
+            launcher = Gtk.FileLauncher(file=Gio.File.new_for_path(path))
+        else:
+            launcher = Gtk.UriLauncher(uri=target)
+        launcher.launch(root if isinstance(root, Gtk.Window) else None, None,
+                        self._on_link_launched)
+
+    def _on_link_launched(self, launcher, result):
+        try:
+            launcher.launch_finish(result)
+        except GLib.Error as err:
+            if not err.matches(Gtk.dialog_error_quark(), Gtk.DialogError.DISMISSED):
+                self._on_error("Could not open the link")
 
     # --- images ------------------------------------------------------------------
     def _choose_image(self):

@@ -57,8 +57,9 @@ def validate(data):
         for key in ("width", "height"):
             if key in note and (type(note[key]) is not int or not 1 <= note[key] <= 32767):
                 raise ValueError("Invalid size")
-        if "open" in note and type(note["open"]) is not bool:
-            raise ValueError("Invalid open state")
+        for key in ("open", "pinned"):
+            if key in note and type(note[key]) is not bool:
+                raise ValueError(f"Invalid {key} state")
 
 
 def default_root():
@@ -67,7 +68,7 @@ def default_root():
 
 class Note:
     def __init__(self, id=None, color=DEFAULT_COLOR, content=None, created=None,
-                 modified=None, open=False, width=320, height=320):
+                 modified=None, open=False, width=320, height=320, pinned=False):
         now = time.time()
         self.id = id or uuid.uuid4().hex
         self.color = color if color in COLORS else DEFAULT_COLOR
@@ -78,18 +79,24 @@ class Note:
         self.open = open
         self.width = width
         self.height = height
+        self.pinned = pinned  # kept at the top of the notes list
 
     @classmethod
     def from_dict(cls, d):
         return cls(id=d.get("id"), color=d.get("color", DEFAULT_COLOR),
                    content=d.get("content", []), created=d.get("created"),
                    modified=d.get("modified"), open=d.get("open", False),
-                   width=d.get("width", 320), height=d.get("height", 320))
+                   width=d.get("width", 320), height=d.get("height", 320),
+                   pinned=d.get("pinned", False))
 
     def to_dict(self):
-        return {"id": self.id, "color": self.color, "content": self.content,
-                "created": self.created, "modified": self.modified, "open": self.open,
-                "width": self.width, "height": self.height}
+        d = {"id": self.id, "color": self.color, "content": self.content,
+             "created": self.created, "modified": self.modified, "open": self.open,
+             "width": self.width, "height": self.height}
+        # Optional keys are written only when set; version 1 readers ignore them.
+        if self.pinned:
+            d["pinned"] = True
+        return d
 
     def plain_text(self):
         return "".join(seg.get("t", "") for seg in self.content)
@@ -233,7 +240,8 @@ class NoteStore:
         return self.notes.get(note_id)
 
     def sorted(self):
-        return sorted(self.notes.values(), key=lambda n: n.modified, reverse=True)
+        """Pinned notes first, then newest first."""
+        return sorted(self.notes.values(), key=lambda n: (n.pinned, n.modified), reverse=True)
 
     def matches(self, note, terms):
         """True when every (lowercase) term appears in the note."""
@@ -254,15 +262,36 @@ class NoteStore:
         self._notify(note.id)
         self.schedule_save()
 
-    def delete(self, note_id):
+    def delete(self, note_id, keep_images=False):
+        """Remove a note and return it. keep_images leaves its files for an undo;
+        drop_images() removes them later (or gc_images() at the next start)."""
         note = self.notes.pop(note_id, None)
         if note is None:
-            return
+            return None
         self._notify(note_id)
         # Commit the note's removal before its images go, so a crash cannot
         # leave a note that points at deleted files.
-        if self.try_save():
-            for name in note.images():
+        if self.try_save() and not keep_images:
+            self._remove_images(note)
+        return note
+
+    def restore(self, note):
+        """Put back a note returned by delete(keep_images=True)."""
+        if note.id in self.notes:
+            return
+        self.notes[note.id] = note
+        self._notify(note.id)
+        self.schedule_save()
+
+    def drop_images(self, note):
+        """Remove the images of a deleted note once its removal is on disk."""
+        if note.id not in self.notes and not self.unsaved:
+            self._remove_images(note)
+
+    def _remove_images(self, note):
+        used = {name for n in self.notes.values() for name in n.images()}
+        for name in note.images():
+            if name not in used:
                 self._remove_image(name)
 
     # --- images -------------------------------------------------------------

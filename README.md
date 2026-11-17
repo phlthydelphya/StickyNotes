@@ -15,14 +15,21 @@ Python + PyGObject, GTK 4 + libadwaita.
 
 - Notes live in the notes list, with search (type to search, Ctrl+F). Cards are compact;
   click one (or press Enter) to edit it in place, Escape to close it again.
-- Search matches every word you type, in any order.
-- A card's right-click menu has the note colors, Pop Out and Delete Note.
+- Search matches every word you type. The color chips under the search entry show only
+  notes of those colors.
+- Each card's menu (the ⋯ button or a right click) has the note colors, Pin to Top,
+  Pop Out and Delete Note. A card shows its pin and how many checklist items are
+  ticked ("2/5").
+- Deleting a note shows "Note deleted" with Undo for a few seconds, instead of asking first.
 - The pop-out button on a card floats that note in its own window; its card stays in the
   list and the button brings the window forward. Closing the window puts it back.
 - Each new note gets a random note color.
 - Seven colors (yellow, green, pink, purple, blue, gray, charcoal), light and dark palettes.
 - Bold, italic, underline, strikethrough, images (file picker or pasted).
 - Lists from the format bar: bullets, numbered (renumbers itself), checklist (click a box to tick).
+  Or type them: `- ` or `* ` for bullets, `[] ` for a checklist, `1. ` for numbers.
+  A ticked item moves below the open ones; unticked, it moves back up.
+- Web addresses, email addresses and file paths are underlined; Ctrl+click opens them.
 - Screenshots: the camera button opens GNOME's screenshot UI (area, window or screen) through
   the xdg-desktop-portal and adds the shot to the note; the tray's "New Note from Screenshot"
   does the same in a new note. GNOME keeps its own copy in ~/Pictures/Screenshots.
@@ -44,7 +51,8 @@ Python + PyGObject, GTK 4 + libadwaita.
 | Ctrl+, | Preferences |
 | Ctrl+B / I / U / T | Bold / italic / underline / strikethrough |
 | Ctrl+Shift+L | Bullets |
-| Ctrl+D | Delete note |
+| Ctrl+D | Delete note (Undo in the notes list) |
+| Ctrl+click | Open a link or path |
 | Escape | Close the note being edited in the list |
 | Ctrl+W | Close the window |
 | Ctrl+Q | Quit (popped-out notes reopen next time) |
@@ -52,6 +60,7 @@ Python + PyGObject, GTK 4 + libadwaita.
 ## Data
 
 `$XDG_DATA_HOME/dusk-sticky-notes/notes.json` plus `images/`. Writes are atomic.
+Pins are an optional key in the same version-1 format.
 Invalid version-1 data is preserved as `notes.json.corrupt-<time>`; its images
 are left untouched. Newer formats open a warning and exit without modifying notes.
 

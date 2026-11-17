@@ -12,6 +12,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
 from . import note_menu  # noqa: E402
 from .note_editor import NoteEditor  # noqa: E402
+from .palette import COLORS, label  # noqa: E402
+from .richtext import checklist_progress  # noqa: E402
 
 REBUILD_DELAY_MS = 120
 # Cards are compact; the selected one expands into an editor.
@@ -41,6 +43,7 @@ class HubWindow(Adw.ApplicationWindow):
         self._menu_drop_source = 0
         self._closed = False
         self._terms = []
+        self._colors = set()  # color filter chips that are on
         self._rows = {}  # note id -> row, kept across store changes
         self._editing = None  # the row whose card is open in the inline editor
         self.connect("close-request", self._on_close_request)
@@ -56,7 +59,10 @@ class HubWindow(Adw.ApplicationWindow):
         # or just start typing. Escape closes it and clears the query.
         self.search = Gtk.SearchEntry(placeholder_text="Search notes", hexpand=True)
         self.search.connect("search-changed", lambda *_: self._rebuild())
-        self.search_bar = Gtk.SearchBar(child=self.search, show_close_button=False)
+        search_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        search_box.append(self.search)
+        search_box.append(self._build_color_chips())
+        self.search_bar = Gtk.SearchBar(child=search_box, show_close_button=False)
         self.search_bar.connect_entry(self.search)
         self.search_bar.set_key_capture_widget(self)
         self.search_bar.connect("notify::search-mode-enabled", self._on_search_mode)
@@ -166,9 +172,33 @@ class HubWindow(Adw.ApplicationWindow):
             return
         self.window_title.set_subtitle("Not saved" if self.store.unsaved else "")
 
+    def _build_color_chips(self):
+        """One toggle per note color; with any on, only notes of those colors show."""
+        chips = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER)
+        chips.add_css_class("color-chips")
+        self.color_chips = {}
+        for color in COLORS:
+            chip = Gtk.ToggleButton(tooltip_text=f"Only {label(color).lower()} notes")
+            chip.add_css_class("swatch")
+            chip.add_css_class(color)
+            chip.update_property([Gtk.AccessibleProperty.LABEL], [f"{label(color)} notes"])
+            chip.connect("toggled", self._on_chip_toggled, color)
+            chips.append(chip)
+            self.color_chips[color] = chip
+        return chips
+
+    def _on_chip_toggled(self, chip, color):
+        if chip.get_active():
+            self._colors.add(color)
+        else:
+            self._colors.discard(color)
+        self._rebuild()
+
     def _on_search_mode(self, bar, _pspec):
         if not bar.get_search_mode():
             self.search.set_text("")
+            for chip in self.color_chips.values():
+                chip.set_active(False)
 
     def _focus_search(self, *_):
         self.search_bar.set_search_mode(not self.search_bar.get_search_mode())
@@ -216,23 +246,35 @@ class HubWindow(Adw.ApplicationWindow):
             self.stack.set_visible_child_name("list")
 
     def _sort_rows(self, a, b):
-        return (b.sort_key > a.sort_key) - (b.sort_key < a.sort_key)  # newest first
+        return (b.sort_key > a.sort_key) - (b.sort_key < a.sort_key)  # pinned, then newest
 
     def _filter_row(self, row):
-        if row is self._editing or not self._terms:
+        if row is self._editing or not (self._terms or self._colors):
             return True
         note = self.store.get(row.note_id)
-        return note is not None and self.store.matches(note, self._terms)  # every word
+        if note is None or (self._colors and note.color not in self._colors):
+            return False
+        return self.store.matches(note, self._terms)  # every word, anywhere in the note
 
     # --- cards -----------------------------------------------------------------------
     def _add_row(self, note):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         card.add_css_class("note-card")
         top = Gtk.Box(spacing=4)
+        pin = Gtk.Image(icon_name="view-pin-symbolic", tooltip_text="Pinned", visible=False)
+        pin.add_css_class("card-chip")
+        top.append(pin)
+        progress = self._chip("checkbox-checked-symbolic")
+        top.append(progress)
         stamp = Gtk.Label(xalign=1, hexpand=True)
         stamp.add_css_class("caption")
         stamp.add_css_class("dim-label")
         top.append(stamp)
+        more = Gtk.Button(icon_name="view-more-symbolic", valign=Gtk.Align.CENTER,
+                          tooltip_text="Note menu")
+        more.add_css_class("flat")
+        more.add_css_class("card-button")
+        top.append(more)
         popout = Gtk.Button(icon_name="window-new-symbolic", valign=Gtk.Align.CENTER)
         popout.add_css_class("flat")
         popout.add_css_class("card-button")
@@ -250,23 +292,46 @@ class HubWindow(Adw.ApplicationWindow):
         row = Gtk.ListBoxRow(child=card, activatable=True)
         row.note_id = note.id
         row.card, row.stamp, row.popout = card, stamp, popout
+        row.pin, row.progress = pin, progress
         row.previews, row.compact = previews, compact
         row.color = None
         row.shown = None  # what the card last showed, to skip unchanged refreshes
         row.editor = None
         popout.connect("clicked", lambda _b: self.pop_out(row.note_id))
+        more.connect("clicked", lambda b: self._open_menu(row, b.compute_bounds(row)[1]))
         row.update_state([Gtk.AccessibleState.EXPANDED], [0])
         self._refresh_row(row, note)
         self._rows[note.id] = row
         self.list.append(row)
         return row
 
+    @staticmethod
+    def _chip(icon):
+        """Small icon + caption on a card's top line, hidden until it has text."""
+        box = Gtk.Box(spacing=3, visible=False)
+        box.add_css_class("card-chip")
+        box.append(Gtk.Image(icon_name=icon))
+        box.text = Gtk.Label()
+        box.text.add_css_class("caption")
+        box.append(box.text)
+        return box
+
+    @staticmethod
+    def _set_chip(chip, text, tooltip=None):
+        chip.set_visible(bool(text))
+        chip.text.set_label(text or "")
+        chip.set_tooltip_text(tooltip)
+
     def _refresh_row(self, row, note):
-        shown = (note.modified, note.color, note.open, row.editor is not None)
+        shown = (note.modified, note.color, note.open, row.editor is not None, note.pinned)
         if row.shown == shown:
             return
         row.shown = shown
-        row.sort_key = note.modified
+        row.sort_key = (note.pinned, note.modified)
+        row.pin.set_visible(note.pinned)
+        done, total = checklist_progress(note.plain_text())
+        self._set_chip(row.progress, f"{done}/{total}" if total else None,
+                       f"{done} of {total} ticked" if total else None)
         if row.color != note.color:
             if row.color:
                 row.card.remove_css_class(row.color)
@@ -427,6 +492,9 @@ class HubWindow(Adw.ApplicationWindow):
     def _show_error(self, text):
         self.toasts.add_toast(Adw.Toast(title=text))
 
+    def add_toast(self, toast):
+        self.toasts.add_toast(toast)
+
     def release_note(self, note_id):
         """Save and close the inline editor for a note that is about to pop out."""
         if self._editing is not None and self._editing.note_id == note_id:
@@ -454,7 +522,7 @@ class HubWindow(Adw.ApplicationWindow):
             self._open_menu(row, Graphene.Rect().init(point.x, point.y, 1, 1))
 
     def _open_menu(self, row, bounds):
-        """The note menu (colors, pop out, delete) at bounds in row."""
+        """The note menu (colors, pin, pop out, delete) at bounds in row."""
         note = self.store.get(row.note_id)
         if note is None or bounds is None:
             return

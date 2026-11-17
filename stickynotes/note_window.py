@@ -50,7 +50,7 @@ class NoteWindow(Adw.Window):
         close = Gtk.Button(icon_name="window-close-symbolic", tooltip_text="Close (Ctrl+W)",
                            action_name="window.close")
         header.pack_end(close)
-        # Built on every open, so the color mark shows the current color.
+        # Built on every open, so the pin entry shows the current state.
         self.menu_button = Gtk.MenuButton(icon_name="view-more-symbolic", tooltip_text="Menu")
         self.menu_button.set_create_popup_func(self._build_menu)
         header.pack_end(self.menu_button)
@@ -99,23 +99,18 @@ class NoteWindow(Adw.Window):
         return False
 
     def confirm_delete(self):
+        """Delete now; a note with content can be brought back from the notes list."""
         if self.editor.is_blank():
             self.deleted = True
             self.editor.shutdown()
             self.close()
             self.store.delete(self.note.id)
             return
-        dialog = Adw.AlertDialog(heading="Delete this note?",
-                                 body="The note will be removed permanently.")
-        dialog.add_response("cancel", "Keep")
-        dialog.add_response("delete", "Delete")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("cancel")
-        dialog.connect("response", self._on_delete_response)
-        dialog.present(self)
+        self.app.delete_note(self.note.id)
 
-    def _on_delete_response(self, _dialog, response):
-        if response == "delete":
-            self.deleted = True
-            self.store.delete(self.note.id)
-            self.close()
+    def close_for_delete(self):
+        """Save the last edit, then close without writing the note again."""
+        self.flush()
+        self.deleted = True
+        self.editor.shutdown()
+        self.close()

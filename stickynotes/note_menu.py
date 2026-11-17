@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The per-note menu, shared by the list cards and popped-out note windows:
-colors and the host's own items. Built fresh on every open."""
+colors, pin and the host's own items. Built fresh on every open."""
 
 from gi.repository import Gio, GLib, Gtk
 
@@ -25,6 +25,10 @@ def build_menu(note, extra):
     colors.set_attribute_value("custom", GLib.Variant("s", "colors"))
     section = Gio.Menu()
     section.append_item(colors)
+    menu.append_section(None, section)
+
+    section = Gio.Menu()
+    section.append_item(_item("Unpin" if note.pinned else "Pin to Top", "app.toggle-pin", nid))
     menu.append_section(None, section)
 
     section = Gio.Menu()
