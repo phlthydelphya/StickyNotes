@@ -11,6 +11,7 @@ from gi.repository import Gdk, Gtk  # noqa: E402
 
 from stickynotes.richtext import (RichEditor, deserialize, install_tags, line_prefix,  # noqa: E402
                                   serialize)
+from stickynotes.palette import COLORS  # noqa: E402
 from stickynotes.store import LoadState, Note, NoteStore  # noqa: E402
 
 
@@ -76,6 +77,17 @@ class StoreTest(unittest.TestCase):
             store.gc_images()
             self.assertTrue(store.image_path("keep.png").exists())
             self.assertFalse(store.image_path("orphan.png").exists())
+
+    def test_new_notes_get_random_note_colors_and_stay_in_the_list(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = NoteStore(d)
+            store.load()
+            notes = [store.create() for _ in range(60)]
+            colors = {note.color for note in notes}
+            self.assertTrue(colors <= set(COLORS))
+            self.assertGreater(len(colors), 1)
+            self.assertFalse(any(note.open for note in notes))
+            self.assertEqual(store.create("blue").color, "blue")
 
     def test_empty_and_unknown_color(self):
         self.assertTrue(Note(content=[{"t": "  \n", "s": []}]).is_empty())

@@ -15,7 +15,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from . import __version__  # noqa: E402
 from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
-from .palette import build_css  # noqa: E402
+from .palette import COLORS, build_css  # noqa: E402
 from .preferences import Preferences, PreferencesDialog  # noqa: E402
 from .store import LoadState, NoteStore  # noqa: E402
 from .tray import Tray  # noqa: E402
@@ -92,6 +92,7 @@ class StickyApp(Adw.Application):
         self._add_action("preferences", lambda *_: self.show_preferences())
         self._add_action("open-note", lambda _a, p: self.open_note(p.get_string()), "s")
         self._add_action("delete-note", lambda _a, p: self.delete_note(p.get_string()), "s")
+        self._add_action("set-color", lambda _a, p: self.set_note_color(*p.unpack()), "(ss)")
         for action, accels in ACCELS.items():
             self.set_accels_for_action(action, accels)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_sigterm)
@@ -171,10 +172,10 @@ class StickyApp(Adw.Application):
         if not self._restored:
             self._restored = True
             for note in self.store.sorted():
-                if note.open and note.is_empty():
-                    self.store.delete(note.id)  # left open untouched at last quit
+                if note.is_empty():
+                    self.store.delete(note.id)  # made but never written to
                 elif note.open:
-                    self.open_note(note.id)
+                    self.open_note(note.id)  # popped out at last quit
 
     def do_command_line(self, command_line):
         if self.store.read_only:
@@ -256,8 +257,10 @@ class StickyApp(Adw.Application):
         if self.store.read_only:
             self._show_newer()
             return
+        # New notes are written in the notes list; the pop-out button floats one.
         note = self.store.create()
-        self.open_note(note.id)
+        self.show_list()
+        self.hub.edit_note(note.id)
 
     def new_screenshot_note(self):
         """New note holding a screenshot; dropped again if the capture is cancelled."""
@@ -265,17 +268,19 @@ class StickyApp(Adw.Application):
             self._show_newer()
             return
         note = self.store.create()
-        self.open_note(note.id)
-        win = self.note_windows.get(note.id)
-        if win is not None:
-            win.take_screenshot(discard_if_empty=True)
+        self.show_list()
+        self.hub.edit_note(note.id)
+        self.hub.take_screenshot(note.id)
 
     def open_note(self, note_id):
+        """Pop a note out into its own window, or bring that window forward."""
         win = self.note_windows.get(note_id)
         if win is None:
             note = self.store.get(note_id)
             if note is None:
                 return
+            if self.hub is not None:
+                self.hub.release_note(note_id)  # one editor per note
             win = NoteWindow(self, note)
             self.note_windows[note_id] = win
             if not note.open:
@@ -301,8 +306,25 @@ class StickyApp(Adw.Application):
         dialog.add_response("delete", "Delete")
         dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
-        dialog.connect("response", lambda _d, r: r == "delete" and self.store.delete(note_id))
+        dialog.connect("response", lambda _d, r: r == "delete" and self._delete_now(note_id))
         dialog.present(self.hub)
+
+    def _delete_now(self, note_id):
+        if self.hub is not None:
+            self.hub.release_note(note_id)  # saves an edit open in the list
+        self.store.delete(note_id)
+
+    # --- note settings from the menus --------------------------------------------
+    def set_note_color(self, note_id, color):
+        note = self.store.get(note_id)
+        if note is None or color not in COLORS:
+            return
+        win = self.note_windows.get(note_id)
+        if win is not None:
+            win.set_color(color)
+        elif note.color != color:
+            note.color = color
+            self.store.update(note, bump=False)
 
     # --- shutdown --------------------------------------------------------------
     def _flush_all(self):
@@ -311,6 +333,9 @@ class StickyApp(Adw.Application):
             return True
         for win in list(self.note_windows.values()):
             win.flush()
+        hub = getattr(self, "hub", None)
+        if hub is not None:
+            hub.flush_editor()
         return self.store.try_save()
 
     def quit_saving(self):

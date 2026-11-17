@@ -5,23 +5,29 @@ Python + PyGObject, GTK 4 + libadwaita.
 
 ## Run
 
-    ./dusk-sticky-notes             # notes list + reopen the notes left open
+    ./dusk-sticky-notes             # notes list + reopen popped-out notes
     ./dusk-sticky-notes --new-note  # straight to a new note
     ./install.sh                    # install to ~/.local (./install.sh --uninstall to remove)
-    ./install.sh --autostart        # also reopen open notes at login (runs --restore)
+    ./install.sh --autostart        # also reopen popped-out notes at login (runs --restore)
     ./install.sh --no-shortcut      # skip the global Ctrl+Alt+N shortcut on a fresh install
 
 ## Features
 
-- One window per note, plus a notes list with search (type to search, Ctrl+F).
+- Notes live in the notes list, with search (type to search, Ctrl+F). Cards are compact;
+  click one (or press Enter) to edit it in place, Escape to close it again.
+- Search matches every word you type, in any order.
+- A card's right-click menu has the note colors, Pop Out and Delete Note.
+- The pop-out button on a card floats that note in its own window; its card stays in the
+  list and the button brings the window forward. Closing the window puts it back.
+- Each new note gets a random note color.
 - Seven colors (yellow, green, pink, purple, blue, gray, charcoal), light and dark palettes.
 - Bold, italic, underline, strikethrough, images (file picker or pasted).
 - Lists from the format bar: bullets, numbered (renumbers itself), checklist (click a box to tick).
 - Screenshots: the camera button opens GNOME's screenshot UI (area, window or screen) through
   the xdg-desktop-portal and adds the shot to the note; the tray's "New Note from Screenshot"
   does the same in a new note. GNOME keeps its own copy in ~/Pictures/Screenshots.
-- Autosave; open notes reopen on next launch; an empty note is discarded when closed.
-- An inactive note hides its controls and shows only the colored sheet.
+- Autosave; popped-out notes reopen on next launch; an empty note is discarded when closed.
+- An inactive popped-out note hides its controls and shows only the colored sheet.
 - Tray icon (monochrome, follows the panel color): New Note, New Note from Screenshot,
   Show Notes List, Preferences, Quit.
   Left click toggles the notes list, middle click makes a new note.
@@ -33,14 +39,15 @@ Python + PyGObject, GTK 4 + libadwaita.
 
 | Keys | Action |
 |---|---|
-| Ctrl+N | New note (in the app) |
+| Ctrl+N | New note in the list (in the app) |
 | Ctrl+Alt+N | New note from anywhere (if enabled) |
 | Ctrl+, | Preferences |
 | Ctrl+B / I / U / T | Bold / italic / underline / strikethrough |
 | Ctrl+Shift+L | Bullets |
 | Ctrl+D | Delete note |
-| Ctrl+W | Close note |
-| Ctrl+Q | Quit (open notes reopen next time) |
+| Escape | Close the note being edited in the list |
+| Ctrl+W | Close the window |
+| Ctrl+Q | Quit (popped-out notes reopen next time) |
 
 ## Data
 

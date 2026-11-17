@@ -37,13 +37,16 @@ window.sticky toolbarview > scrolledwindow {
 }
 
 window.sticky textview.note-text,
-window.sticky textview.note-text text {
+window.sticky textview.note-text text,
+.note-card textview.note-text,
+.note-card textview.note-text text {
   background-color: transparent;
   color: inherit;
   font-size: 11.5pt;
 }
 
-window.sticky .format-bar button {
+window.sticky .format-bar button,
+.note-card .format-bar button {
   min-height: 28px;
   min-width: 28px;
   padding: 2px;
@@ -51,7 +54,9 @@ window.sticky .format-bar button {
 }
 
 window.sticky .format-bar button:checked,
-window.sticky .format-bar menubutton.in-list > button {
+window.sticky .format-bar menubutton.in-list > button,
+.note-card .format-bar button:checked,
+.note-card .format-bar menubutton.in-list > button {
   background-color: alpha(currentColor, 0.14);
 }
 
@@ -94,6 +99,23 @@ window.sticky .format-bar menubutton.in-list > button {
   box-shadow: 0 0 0 2px alpha(@accent_bg_color, 0.6), 0 1px 3px alpha(black, 0.15);
 }
 
+/* The card open in the editor keeps a solid ring. */
+.note-list > row.expanded .note-card {
+  box-shadow: 0 0 0 2px @accent_bg_color, 0 1px 3px alpha(black, 0.15);
+}
+
 .note-card .card-image {
   border-radius: 6px;
+}
+
+.note-card .card-button {
+  min-height: 24px;
+  min-width: 24px;
+  padding: 2px;
+  color: inherit;
+}
+
+/* A popped-out note's button stays lit while its window is open. */
+.note-list > row.popped-out .card-button {
+  background-color: alpha(currentColor, 0.14);
 }

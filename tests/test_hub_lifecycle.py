@@ -125,6 +125,105 @@ def test_pending_menu_cleanup_cancelled_on_close(app):
     assert popover.get_parent() is None
 
 
+def rows(hub):
+    found, index = [], 0
+    while (row := hub.list.get_row_at_index(index)) is not None:
+        found.append(row)
+        index += 1
+    return found
+
+
+def editing(hub):
+    return [row.note_id for row in rows(hub) if row.previews.get_visible_child_name() == "editor"]
+
+
+def add_note(app, text):
+    note = app.store.create()
+    note.content = [{'t': text}]
+    app.store.update(note)
+    return note
+
+
+def test_clicked_card_opens_in_place_and_survives_autosave(app):
+    add_note(app, 'Second note')
+    hub = open_hub(app)
+    first_row, second_row = rows(hub)
+    assert editing(hub) == []  # the row with initial focus stays compact
+
+    # Activating a card opens its editor in place and collapses any other.
+    hub.list.emit("row-activated", first_row)
+    assert editing(hub) == [first_row.note_id]
+    hub.list.emit("row-activated", second_row)
+    assert editing(hub) == [second_row.note_id] and first_row.editor is None
+    editor = second_row.editor
+    assert editor.view.has_focus()
+
+    # Typing autosaves; the store change does not rebuild the card being edited.
+    editor.view.get_buffer().insert_at_cursor(" edited", -1)
+    advance(400 + REBUILD_DELAY_MS * 2)
+    assert app.store.get(second_row.note_id).plain_text().endswith(" edited")
+    assert rows(hub)[0] in (first_row, second_row) and second_row.editor is editor
+    assert hub.rebuilds > 1
+
+    # A search keeps the open card visible; Escape closes the editor.
+    hub.search.set_text("no such text")
+    hub._rebuild()
+    assert [r.note_id for r in rows(hub) if r.get_child_visible()] == [second_row.note_id]
+    hub.search.set_text("")
+    hub._rebuild()
+    hub._on_editor_key(None, Gdk.KEY_Escape, 0, 0, second_row)
+    assert hub._editing is None and second_row.editor is None
+    hub.close()
+
+
+def test_new_empty_note_is_listed_while_written_and_dropped_if_left_empty(app):
+    hub = open_hub(app)
+    before = len(rows(hub))
+    note = app.store.create()
+    hub.edit_note(note.id)
+    assert len(rows(hub)) == before + 1 and editing(hub) == [note.id]
+    advance(REBUILD_DELAY_MS * 2)  # the create notification rebuilds; the row stays
+    assert editing(hub) == [note.id]
+    hub.list.emit("row-activated", next(r for r in rows(hub) if r.note_id != note.id))
+    assert app.store.get(note.id) is None
+    assert note.id not in [r.note_id for r in rows(hub)]
+    hub.close()
+
+
+def test_pop_out_saves_and_closes_the_inline_editor(app):
+    hub = open_hub(app)
+    popped = []
+    def open_note(note_id):  # what StickyApp.open_note does before making the window
+        hub.release_note(note_id)
+        popped.append(note_id)
+    app.open_note = open_note
+    row = rows(hub)[0]
+    hub.edit_note(row.note_id)
+    row.editor.view.get_buffer().insert_at_cursor("popped ", -1)
+    row.popout.emit("clicked")
+    assert popped == [row.note_id] and hub._editing is None
+    assert app.store.get(row.note_id).plain_text().endswith("popped ")
+
+    # While it floats, activating its card brings the window forward instead.
+    note = app.store.get(row.note_id)
+    note.open = True
+    app.store.update(note, bump=False)
+    advance(REBUILD_DELAY_MS * 2)
+    assert row.has_css_class("popped-out")
+    hub.list.emit("row-activated", row)
+    assert popped == [row.note_id] * 2 and hub._editing is None
+    hub.close()
+
+
+def test_closing_hub_saves_the_open_editor(app):
+    hub = open_hub(app)
+    row = rows(hub)[0]
+    hub.edit_note(row.note_id)
+    row.editor.view.get_buffer().insert_at_cursor("saved on close ", -1)
+    hub.close()
+    assert app.store.get(row.note_id).plain_text().endswith("saved on close ")
+
+
 def test_twenty_reopens_have_one_subscription_each(app):
     closed = []
     for _ in range(20):

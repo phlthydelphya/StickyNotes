@@ -4,6 +4,7 @@
 import math
 import json
 import os
+import random
 import sys
 import time
 import uuid
@@ -234,8 +235,14 @@ class NoteStore:
     def sorted(self):
         return sorted(self.notes.values(), key=lambda n: n.modified, reverse=True)
 
-    def create(self, color=DEFAULT_COLOR):
-        note = Note(color=color, open=True)
+    def matches(self, note, terms):
+        """True when every (lowercase) term appears in the note."""
+        text = note.plain_text().lower()
+        return all(term in text for term in terms)
+
+    def create(self, color=None):
+        """A new note in the notes list, in a random note color unless one is given."""
+        note = Note(color=color or random.choice(COLORS))
         self.notes[note.id] = note
         self._notify(note.id)
         self.schedule_save()
