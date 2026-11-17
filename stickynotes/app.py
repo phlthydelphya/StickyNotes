@@ -102,7 +102,7 @@ class StickyApp(Adw.Application):
         if self.store.load() is LoadState.OK:
             self.store.gc_images()
 
-        self._add_action("new-note", lambda *_: self.new_note())
+        self._add_action("new-note", lambda *_: self._on_new_note_action())
         self._add_action("new-screenshot-note", lambda *_: self.new_screenshot_note())
         self._add_action("show-list", lambda *_: self.show_list())
         self._add_action("quit", lambda *_: self.quit_saving())
@@ -323,12 +323,19 @@ class StickyApp(Adw.Application):
         self.hub = None
         return False
 
-    def new_note(self, from_selection=False):
+    def _on_new_note_action(self):
+        # Ctrl+N or the + button in a popped-out note: the new note pops out too.
+        self.new_note(pop_out=isinstance(self.get_active_window(), NoteWindow))
+
+    def new_note(self, from_selection=False, pop_out=False):
         if self.store.read_only:
             self._show_newer()
             return
-        # New notes are written in the notes list; the pop-out button floats one.
         note = self.store.create()
+        if pop_out:
+            self.open_note(note.id)
+            return
+        # Otherwise new notes are written in the notes list; the pop-out button floats one.
         self.show_list()
         self.hub.edit_note(note.id)
         if from_selection:

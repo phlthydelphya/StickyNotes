@@ -28,6 +28,7 @@ Python + PyGObject, GTK 4 + libadwaita.
   at the next start.
 - The pop-out button on a card floats that note in its own window; its card stays in the
   list and the button brings the window forward. Closing the window puts it back.
+  New note (+ or Ctrl+N) in a popped-out note pops the new note out too.
 - Each new note gets a random note color.
 - Seven colors (yellow, green, pink, purple, blue, gray, charcoal), light and dark palettes.
 - Bold, italic, underline, strikethrough, images (file picker or pasted).

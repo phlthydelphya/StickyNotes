@@ -534,3 +534,31 @@ def test_captured_selection_fills_the_new_note(hub_app):
     hub._editing.editor.flush()
     assert note.plain_text() == "a quote\n\nFrom https://example.org"
     hub.close()
+
+
+# --- new note from a popped-out note ------------------------------------------------------------
+def fake_app(tmp_path, active_window=None):
+    store = NoteStore(tmp_path)
+    store.load()
+    calls = []
+    hub = SimpleNamespace(edit_note=lambda nid: calls.append(("edit", nid)))
+    fake = SimpleNamespace(store=store, hub=hub, calls=calls,
+                           show_list=lambda: calls.append(("list",)),
+                           open_note=lambda nid: calls.append(("open", nid)),
+                           get_active_window=lambda: active_window)
+    fake.new_note = lambda **kw: StickyApp.new_note(fake, **kw)
+    return fake
+
+
+def test_new_note_from_a_popped_out_note_pops_out(tmp_path):
+    fake = fake_app(tmp_path)
+    StickyApp.new_note(fake, pop_out=True)
+    (note_id,) = fake.store.notes
+    assert fake.calls == [("open", note_id)]
+
+
+def test_new_note_from_the_list_or_tray_opens_in_the_list(tmp_path):
+    fake = fake_app(tmp_path, active_window=object())  # the notes list, say
+    StickyApp._on_new_note_action(fake)
+    (note_id,) = fake.store.notes
+    assert fake.calls == [("list",), ("edit", note_id)]
