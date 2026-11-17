@@ -9,7 +9,7 @@ Python + PyGObject, GTK 4 + libadwaita.
     ./dusk-sticky-notes --new-note  # straight to a new note
     ./install.sh                    # install to ~/.local (./install.sh --uninstall to remove)
     ./install.sh --autostart        # also reopen popped-out notes at login (runs --restore)
-    ./install.sh --no-shortcut      # skip the global Ctrl+Alt+N shortcut on a fresh install
+    ./install.sh --no-shortcut      # skip the global shortcuts on a fresh install
 
 ## Features
 
@@ -39,8 +39,10 @@ Python + PyGObject, GTK 4 + libadwaita.
   Show Notes List, Preferences, Quit.
   Left click toggles the notes list, middle click makes a new note.
 - Preferences (Ctrl+,): keep running in the tray when closed (on by default; ignored when the
-  session has no tray, so the app never runs invisibly), start at login, and a global
-  Ctrl+Alt+N new-note shortcut (a GNOME custom shortcut running `dusk-sticky-notes --new-note`).
+  session has no tray, so the app never runs invisibly), start at login, and the global
+  shortcuts (GNOME custom shortcuts): Ctrl+Alt+N runs `dusk-sticky-notes --new-note`, and
+  Ctrl+Alt+Shift+N runs `--new-from-selection`, a new note holding the text selected in any
+  app. Firefox and Chromium also give the page address, added as "From <address>".
 
 ## Shortcuts
 
@@ -48,6 +50,7 @@ Python + PyGObject, GTK 4 + libadwaita.
 |---|---|
 | Ctrl+N | New note in the list (in the app) |
 | Ctrl+Alt+N | New note from anywhere (if enabled) |
+| Ctrl+Alt+Shift+N | New note from the selected text, from anywhere (if enabled) |
 | Ctrl+, | Preferences |
 | Ctrl+B / I / U / T | Bold / italic / underline / strikethrough |
 | Ctrl+Shift+L | Bullets |

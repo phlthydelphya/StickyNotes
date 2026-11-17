@@ -45,6 +45,8 @@ class StickyApp(Adw.Application):
                              "Create a new note", None)
         self.add_main_option("restore", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
                              "Only reopen the notes left open (used at login)", None)
+        self.add_main_option("new-from-selection", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
+                             "Create a new note holding the selected text", None)
         self.store = None
         self.hub = None
         self.note_windows = {}
@@ -188,6 +190,9 @@ class StickyApp(Adw.Application):
         if options.contains("new-note"):
             self._restore()
             self.new_note()
+        elif options.contains("new-from-selection"):
+            self._restore()
+            self.new_note(from_selection=True)
         elif options.contains("restore"):
             # With no open notes this opens nothing: the app then waits in the
             # tray, or exits when there is no tray.
@@ -259,7 +264,7 @@ class StickyApp(Adw.Application):
         self.hub = None
         return False
 
-    def new_note(self):
+    def new_note(self, from_selection=False):
         if self.store.read_only:
             self._show_newer()
             return
@@ -267,6 +272,8 @@ class StickyApp(Adw.Application):
         note = self.store.create()
         self.show_list()
         self.hub.edit_note(note.id)
+        if from_selection:
+            self.hub.capture_selection(note.id)
 
     def new_screenshot_note(self):
         """New note holding a screenshot; dropped again if the capture is cancelled."""

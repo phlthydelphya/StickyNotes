@@ -65,8 +65,9 @@ class PreferencesDialog(Adw.PreferencesDialog):
         keys = Adw.PreferencesGroup(title="Keyboard")
         self.shortcut_row = Adw.SwitchRow(
             title="New note from anywhere",
-            subtitle=f"{integration.SHORTCUT_LABEL} creates a note, even when "
-                     "Sticky Notes is not focused",
+            subtitle=f"{integration.SHORTCUT_LABEL} creates a note, even when Sticky Notes is "
+                     f"not focused; {integration.SELECTION_SHORTCUT_LABEL} makes one from the "
+                     "selected text",
             active=integration.shortcut_enabled(),
             sensitive=integration.shortcut_supported())
         self._connect(self.shortcut_row, integration.set_shortcut, integration.shortcut_enabled,

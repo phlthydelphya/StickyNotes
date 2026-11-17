@@ -18,9 +18,18 @@ APP_ID = "org.duskos.StickyNotes"
 LAUNCHER = "dusk-sticky-notes"
 SHORTCUT = "<Control><Alt>n"
 SHORTCUT_LABEL = "Ctrl+Alt+N"
+SELECTION_SHORTCUT_LABEL = "Ctrl+Alt+Shift+N"
 MEDIA_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
 CUSTOM_KEY = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
-SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dusk-sticky-notes/"
+_KEYS = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
+SHORTCUT_PATH = _KEYS + "dusk-sticky-notes/"
+SELECTION_PATH = _KEYS + "dusk-sticky-notes-selection/"
+# path -> (name, launcher option, binding); the preferences switch sets both.
+SHORTCUTS = {
+    SHORTCUT_PATH: ("New sticky note", "--new-note", SHORTCUT),
+    SELECTION_PATH: ("New sticky note from selected text", "--new-from-selection",
+                     "<Control><Alt><Shift>n"),
+}
 
 
 def launcher_path():
@@ -93,17 +102,21 @@ def set_shortcut(enabled, launcher=None):
         return False
     media = Gio.Settings.new(MEDIA_KEYS)
     paths = list(media.get_strv("custom-keybindings"))
-    custom = Gio.Settings.new_with_path(CUSTOM_KEY, SHORTCUT_PATH)
-    if enabled:
-        custom.set_string("name", "New sticky note")
-        custom.set_string("command", f"{shlex.quote(launcher or launcher_path())} --new-note")
-        custom.set_string("binding", SHORTCUT)
-        if SHORTCUT_PATH not in paths:
-            media.set_strv("custom-keybindings", paths + [SHORTCUT_PATH])
-    else:
-        if SHORTCUT_PATH in paths:
-            media.set_strv("custom-keybindings", [p for p in paths if p != SHORTCUT_PATH])
-        for key in ("name", "command", "binding"):
-            custom.reset(key)
+    command = shlex.quote(launcher or launcher_path())
+    for path, (name, option, binding) in SHORTCUTS.items():
+        custom = Gio.Settings.new_with_path(CUSTOM_KEY, path)
+        if enabled:
+            custom.set_string("name", name)
+            custom.set_string("command", f"{command} {option}")
+            custom.set_string("binding", binding)
+            if path not in paths:
+                paths.append(path)
+        else:
+            if path in paths:
+                paths.remove(path)
+            for key in ("name", "command", "binding"):
+                custom.reset(key)
+    if paths != list(media.get_strv("custom-keybindings")):
+        media.set_strv("custom-keybindings", paths)
     Gio.Settings.sync()
     return True

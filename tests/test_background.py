@@ -75,18 +75,25 @@ def test_shortcut_add_remove_keeps_other_bindings(tmp_path):
         assert i.set_shortcut(True, "/home/u/.local/bin/dusk-sticky-notes")
         assert i.set_shortcut(True, "/home/u/.local/bin/dusk-sticky-notes")  # no duplicate
         custom = Gio.Settings.new_with_path(i.CUSTOM_KEY, i.SHORTCUT_PATH)
+        selection = Gio.Settings.new_with_path(i.CUSTOM_KEY, i.SELECTION_PATH)
         print(media.get_strv("custom-keybindings"))
         print(custom.get_string("binding"), custom.get_string("command"))
+        print(selection.get_string("binding"), selection.get_string("command"))
         assert i.shortcut_enabled()
         i.set_shortcut(False)
-        print(media.get_strv("custom-keybindings"), repr(custom.get_string("binding")))
+        print(media.get_strv("custom-keybindings"), repr(custom.get_string("binding")),
+              repr(selection.get_string("binding")))
     """)
     if out.strip() == "unsupported":
         return
     lines = out.strip().splitlines()
     assert lines[0].count("dusk-sticky-notes/") == 1 and "other/" in lines[0]
+    assert lines[0].count("dusk-sticky-notes-selection/") == 1
     assert lines[1] == "<Control><Alt>n /home/u/.local/bin/dusk-sticky-notes --new-note"
-    assert "dusk-sticky-notes/" not in lines[2] and "other/" in lines[2] and "''" in lines[2]
+    assert lines[2] == ("<Control><Alt><Shift>n /home/u/.local/bin/dusk-sticky-notes "
+                        "--new-from-selection")
+    assert "dusk-sticky-notes" not in lines[3] and "other/" in lines[3]
+    assert lines[3].count("''") == 2
 
 
 def test_desktop_exec_escapes_percent():

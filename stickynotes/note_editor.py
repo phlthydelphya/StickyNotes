@@ -174,6 +174,11 @@ class NoteEditor:
     def is_blank(self):
         return not any(seg.get("t", "").strip() or "img" in seg for seg in self.rich.dump())
 
+    def insert_text(self, text):
+        """Add plain text at the cursor (a captured selection) and save it."""
+        self.rich.buf.insert_at_cursor(text)
+        self.view.scroll_mark_onscreen(self.rich.buf.get_insert())
+
     # --- links -------------------------------------------------------------------
     def _on_link(self, _rich, target):
         root = self.view.get_root()

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pin, undo delete, typing shortcuts, checklists and links."""
+"""Pin, undo delete, typing shortcuts, checklists, links and selection capture."""
 import json
 import os
 import uuid
@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from stickynotes.app import Adw, Gdk, Gio, GLib, Gtk, StickyApp
+from stickynotes import selection
 from stickynotes.hub_window import HubWindow, REBUILD_DELAY_MS
 from stickynotes.richtext import RichEditor, checklist_progress, link_target
 from stickynotes.store import NoteStore, validate
@@ -160,6 +161,17 @@ def test_links_are_found_and_ctrl_click_targets():
     assert ed.link_at(end) == "www.example.org"
 
 
+# --- selection capture -----------------------------------------------------------------------
+def test_selection_source_and_capture_text():
+    assert selection.source_url(b"https://example.org/page\n") == "https://example.org/page"
+    utf16 = "https://example.org/a\nTitle".encode("utf-16-le")
+    assert selection.source_url(utf16) == "https://example.org/a"
+    assert selection.source_url(b"javascript:alert(1)") is None
+    assert selection.source_url(b"") is None
+    assert selection.capture_text("  quote  ", None) == "quote"
+    assert selection.capture_text("quote", "https://x.org") == "quote\n\nFrom https://x.org"
+
+
 # --- the notes list ----------------------------------------------------------------------------
 @pytest.fixture
 def hub_app(tmp_path):
@@ -270,4 +282,20 @@ def test_undo_brings_a_deleted_note_back(hub_app, monkeypatch):
     empty = store.create()  # nothing to bring back: no toast
     obj.delete_note(empty.id)
     assert store.get(empty.id) is None and len(toasts) == 1
+    hub.close()
+
+
+def test_captured_selection_fills_the_new_note(hub_app):
+    hub = HubWindow(hub_app)
+    hub.present()
+    advance()
+    note = hub_app.store.create()
+    hub.edit_note(note.id)
+    hub._insert_capture(note.id, "  a quote  ", "https://example.org")
+    hub._editing.editor.flush()
+    assert note.plain_text() == "a quote\n\nFrom https://example.org"
+    hub._insert_capture("someone-else", "ignored", None)
+    hub._insert_capture(note.id, None, None)  # nothing selected: a message only
+    hub._editing.editor.flush()
+    assert note.plain_text() == "a quote\n\nFrom https://example.org"
     hub.close()

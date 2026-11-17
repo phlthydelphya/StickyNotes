@@ -14,6 +14,7 @@ from . import note_menu  # noqa: E402
 from .note_editor import NoteEditor  # noqa: E402
 from .palette import COLORS, label  # noqa: E402
 from .richtext import checklist_progress  # noqa: E402
+from .selection import capture_text, read_selection  # noqa: E402
 
 REBUILD_DELAY_MS = 120
 # Cards are compact; the selected one expands into an editor.
@@ -21,6 +22,10 @@ COMPACT_LINES = 2
 COMPACT_IMAGE_HEIGHT = 56
 EDITOR_MIN_HEIGHT = 80
 EXPAND_MS = 200
+# A captured selection waits this long for the window to get focus (Wayland
+# hands the selection only to the focused app), then is read anyway.
+CAPTURE_WAIT_MS = 1500
+CAPTURE_SETTLE_MS = 100
 
 
 def format_time(ts):
@@ -494,6 +499,40 @@ class HubWindow(Adw.ApplicationWindow):
 
     def add_toast(self, toast):
         self.toasts.add_toast(toast)
+
+    def capture_selection(self, note_id):
+        """Fill the note being written with the text selected in another app."""
+        state = {"handler": 0, "source": 0}
+
+        def read(*_):
+            if state["handler"]:
+                self.disconnect(state["handler"])
+                state["handler"] = 0
+            if state["source"]:
+                GLib.source_remove(state["source"])
+                state["source"] = 0
+            if not self._closed:
+                read_selection(self.get_display().get_primary_clipboard(),
+                               lambda text, source: self._insert_capture(note_id, text, source))
+            return GLib.SOURCE_REMOVE
+
+        def became_active(*_):
+            if self.is_active():
+                read()  # the selection offer arrives with keyboard focus
+        if self.is_active():
+            GLib.timeout_add(CAPTURE_SETTLE_MS, read)
+            return
+        state["handler"] = self.connect("notify::is-active", became_active)
+        state["source"] = GLib.timeout_add(CAPTURE_WAIT_MS, read)
+
+    def _insert_capture(self, note_id, text, source):
+        row = self._editing
+        if self._closed or row is None or row.note_id != note_id:
+            return
+        if text is None:
+            self._show_error("No selected text to capture")
+            return
+        row.editor.insert_text(capture_text(text, source))
 
     def release_note(self, note_id):
         """Save and close the inline editor for a note that is about to pop out."""
