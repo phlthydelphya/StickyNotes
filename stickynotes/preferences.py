@@ -9,11 +9,14 @@ from pathlib import Path
 import gi
 
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib  # noqa: E402
+gi.require_version("Gtk", "4.0")
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from . import integration
+from . import integration  # noqa: E402
+from .theme import LABELS, STYLES  # noqa: E402
 
-DEFAULTS = {"close_to_tray": True}
+DEFAULTS = {"close_to_tray": True, "style": "system"}
+CHOICES = {"style": STYLES}
 
 
 class Preferences:
@@ -28,8 +31,9 @@ class Preferences:
             return self
         if isinstance(data, dict):
             for key, default in DEFAULTS.items():
-                if type(data.get(key)) is type(default):
-                    self.values[key] = data[key]
+                value = data.get(key)
+                if type(value) is type(default) and value in CHOICES.get(key, (value,)):
+                    self.values[key] = value
         return self
 
     def save(self):
@@ -42,12 +46,23 @@ class Preferences:
     def close_to_tray(self):
         return self.values["close_to_tray"]
 
+    @property
+    def style(self):
+        return self.values["style"]
+
 
 class PreferencesDialog(Adw.PreferencesDialog):
     def __init__(self, app):
         super().__init__(title="Preferences")
         self.app = app
         page = Adw.PreferencesPage()
+
+        appearance = Adw.PreferencesGroup(title="Appearance")
+        self.style_row = Adw.ComboRow(title="Style", model=Gtk.StringList.new(list(LABELS)),
+                                      selected=STYLES.index(app.prefs.style))
+        self.style_row.connect("notify::selected", self._on_style)
+        appearance.add(self.style_row)
+        page.add(appearance)
 
         background = Adw.PreferencesGroup(title="Background")
         self.tray_row = Adw.SwitchRow(title="Keep running in the tray when closed",
@@ -97,6 +112,11 @@ class PreferencesDialog(Adw.PreferencesDialog):
                 row.set_active(actual)
                 row.handler_unblock(handler)
         handler = row.connect("notify::active", on_active)
+
+    def _on_style(self, row, _pspec):
+        if self.app.set_style(STYLES[row.get_selected()]) is False:
+            self.add_toast(Adw.Toast(title="The style applies now but could not be saved "
+                                           "for next time"))
 
     @staticmethod
     def _set_autostart(enabled):

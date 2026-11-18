@@ -49,6 +49,30 @@ def test_preferences_defaults_and_bad_values(tmp_path):
     assert Preferences(tmp_path).load().close_to_tray is True
 
 
+def test_style_preference_values(tmp_path):
+    assert Preferences(tmp_path).load().style == "system"
+    (tmp_path / "settings.json").write_text(json.dumps({"style": "light"}))
+    assert Preferences(tmp_path).load().style == "light"
+    (tmp_path / "settings.json").write_text(json.dumps({"style": "sepia"}))
+    assert Preferences(tmp_path).load().style == "system"  # unknown style ignored
+
+
+def test_light_variant_follows_a_dark_only_theme_import(tmp_path):
+    from stickynotes.theme import light_variant
+    assert light_variant(tmp_path) is None  # no gtk.css
+    theme = tmp_path / "theme"
+    theme.mkdir()
+    (theme / "gtk-dark.css").write_text("")
+    user = tmp_path / "gtk-4.0"
+    user.mkdir()
+    (user / "gtk.css").write_text(f'/* x */\n@import url("file://{theme}/gtk-dark.css");\n')
+    assert light_variant(tmp_path) is None  # no light sibling
+    (theme / "gtk.css").write_text("")
+    assert light_variant(tmp_path) == theme / "gtk.css"
+    (user / "gtk.css").write_text(f"@import url('file://{theme}/gtk.css');\n")
+    assert light_variant(tmp_path) is None  # already the light variant
+
+
 def test_autostart_file_round_trip(tmp_path):
     out = run_isolated(tmp_path, """
         from stickynotes import integration as i
@@ -162,10 +186,15 @@ def test_preference_switches_revert_when_change_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(p.integration, "shortcut_enabled", lambda: False)
     monkeypatch.setattr(p.integration, "shortcut_supported", lambda: True)
     app = SimpleNamespace(prefs=Preferences(tmp_path), tray=None,
-                          set_close_to_tray=lambda enabled: False)
+                          set_close_to_tray=lambda enabled: False,
+                          set_style=lambda style: styles.append(style))
+    styles = []
     dialog = p.PreferencesDialog(app)
     for row in (dialog.autostart_row, dialog.shortcut_row):
         row.set_active(True)
         assert not row.get_active()
     dialog.tray_row.set_active(False)  # app kept True: switch follows the app
     assert dialog.tray_row.get_active()
+    assert dialog.style_row.get_selected() == 0
+    dialog.style_row.set_selected(1)
+    assert styles == ["light"]

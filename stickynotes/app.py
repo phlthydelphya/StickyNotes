@@ -22,6 +22,7 @@ from .preferences import Preferences, PreferencesDialog  # noqa: E402
 from .reminders import SNOOZE_MINUTES, ReminderDialog, preset_time  # noqa: E402
 from .search_provider import SearchProvider  # noqa: E402
 from .store import LoadState, NoteStore  # noqa: E402
+from .theme import color_scheme, light_variant  # noqa: E402
 from .tray import Tray  # noqa: E402
 
 APP_ID = "org.duskos.StickyNotes"
@@ -87,13 +88,20 @@ class StickyApp(Adw.Application):
         if from_checkout:
             Gtk.IconTheme.get_for_display(display).add_search_path(str(source_icons))
         priority = Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
+        # Added first, so the note layout and palette below still win over it.
+        self._theme_css = Gtk.CssProvider()
+        self._light_theme = light_variant(GLib.get_user_config_dir())
+        self._theme_is_light = False
+        Gtk.StyleContext.add_provider_for_display(display, self._theme_css, priority)
         layout = Gtk.CssProvider()
         layout.load_from_path(str(STYLE))
         Gtk.StyleContext.add_provider_for_display(display, layout, priority)
         self._palette_css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_display(display, self._palette_css, priority)
+        self.prefs = Preferences().load()
         styles = Adw.StyleManager.get_default()
         styles.connect("notify::dark", self._load_palette)
+        styles.set_color_scheme(color_scheme(self.prefs.style))
         self._load_palette(styles)
 
         self.store = NoteStore()
@@ -121,7 +129,6 @@ class StickyApp(Adw.Application):
             self.set_accels_for_action(action, accels)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_sigterm)
 
-        self.prefs = Preferences().load()
         self.tray = Tray(self, APP_ID, "Sticky Notes",
                          icon_theme_path=str(source_icons) if from_checkout else "",
                          on_availability=self._on_tray_availability)
@@ -189,6 +196,15 @@ class StickyApp(Adw.Application):
         """Apply now; return False when the choice could not be saved for next time."""
         self.prefs.values["close_to_tray"] = enabled
         self._update_hold()
+        return self._save_prefs()
+
+    def set_style(self, style):
+        """Apply now; return False when the choice could not be saved for next time."""
+        self.prefs.values["style"] = style
+        Adw.StyleManager.get_default().set_color_scheme(color_scheme(style))
+        return self._save_prefs()
+
+    def _save_prefs(self):
         try:
             self.prefs.save()
         except OSError as err:
@@ -223,7 +239,15 @@ class StickyApp(Adw.Application):
         self._prefs_dialog = None
 
     def _load_palette(self, styles, *_):
-        self._palette_css.load_from_string(build_css(styles.get_dark()))
+        dark = styles.get_dark()
+        self._palette_css.load_from_string(build_css(dark))
+        light = not dark and self._light_theme is not None
+        if light != self._theme_is_light:
+            self._theme_is_light = light
+            if light:
+                self._theme_css.load_from_path(str(self._light_theme))
+            else:
+                self._theme_css.load_from_string("")
 
     def _add_action(self, name, callback, param=None):
         act = Gio.SimpleAction.new(name, GLib.VariantType.new(param) if param else None)
