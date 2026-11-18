@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Install Dusk Sticky Notes for the current user (no root needed).
+# Install Sticky Gnotes for the current user (no root needed).
 # Usage: ./install.sh [--autostart] [--no-shortcut]
 #          install or update; --autostart reopens notes at login,
 #          --no-shortcut skips the global Ctrl+Alt+N new-note shortcut

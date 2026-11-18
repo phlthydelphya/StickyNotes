@@ -83,7 +83,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         keys = Adw.PreferencesGroup(title="Keyboard")
         self.shortcut_row = Adw.SwitchRow(
             title="New note from anywhere",
-            subtitle=f"{integration.SHORTCUT_LABEL} creates a note, even when Sticky Notes is "
+            subtitle=f"{integration.SHORTCUT_LABEL} creates a note, even when Sticky Gnotes is "
                      f"not focused; {integration.SELECTION_SHORTCUT_LABEL} makes one from the "
                      "selected text",
             active=integration.shortcut_enabled(),
@@ -127,4 +127,4 @@ class PreferencesDialog(Adw.PreferencesDialog):
         if self.app.tray is None or not self.app.tray.available:
             self.tray_row.set_subtitle("No tray in this session: closing the last window quits")
         else:
-            self.tray_row.set_subtitle("Closing windows leaves Sticky Notes in the top bar")
+            self.tray_row.set_subtitle("Closing windows leaves Sticky Gnotes in the top bar")

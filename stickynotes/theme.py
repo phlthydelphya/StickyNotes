@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """App style (follow system, light or dark) and the desktop theme's other variant.
 
-A desktop theme installer (theme-unifier, for example, and the Dusk desktop,
+A desktop theme installer (theme-unifier, for example, and ClocheOS,
 still in development) puts one variant of a theme into ~/.config/gtk-4.0/gtk.css,
 usually as an @import of the theme's gtk.css or gtk-dark.css. GTK applies that
 file to every app at USER priority, whatever the app's color scheme.

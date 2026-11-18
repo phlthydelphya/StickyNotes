@@ -78,7 +78,7 @@ class StickyApp(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
-        GLib.set_application_name("Sticky Notes")
+        GLib.set_application_name("Sticky Gnotes")
         Gtk.Window.set_default_icon_name(APP_ID)
         # Above USER priority: a desktop theme's ~/.config/gtk-4.0/gtk.css must not
         # repaint the notes, since a note's color is its identity.
@@ -130,7 +130,7 @@ class StickyApp(Adw.Application):
             self.set_accels_for_action(action, accels)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_sigterm)
 
-        self.tray = Tray(self, APP_ID, "Sticky Notes",
+        self.tray = Tray(self, APP_ID, "Sticky Gnotes",
                          icon_theme_path=str(source_icons) if from_checkout else "",
                          on_availability=self._on_tray_availability)
         if not self.store.read_only:
@@ -302,10 +302,10 @@ class StickyApp(Adw.Application):
         if self._newer_window is not None:
             self._newer_window.present()
             return
-        self._newer_window = Adw.ApplicationWindow(application=self, title="Sticky Notes")
+        self._newer_window = Adw.ApplicationWindow(application=self, title="Sticky Gnotes")
         self._newer_window.present()
         dialog = Adw.AlertDialog(heading="Notes were saved by a newer version",
-                                 body="Your notes have not been changed. Open them with a newer version of Sticky Notes.")
+                                 body="Your notes have not been changed. Open them with a newer version of Sticky Gnotes.")
         dialog.add_response("close", "Close")
         dialog.set_close_response("close")
         dialog.connect("response", lambda *_: self.quit())
@@ -313,11 +313,11 @@ class StickyApp(Adw.Application):
 
     def show_about(self):
         about = Adw.AboutDialog(
-            application_name="Sticky Notes",
+            application_name="Sticky Gnotes",
             application_icon=APP_ID,
             developer_name="phlthydelphya",
             version=__version__,
-            comments="Quick colored notes for GNOME. Made for the Dusk desktop, still in development.",
+            comments="Quick colored notes for GNOME. Made for ClocheOS, still in development.",
             developers=["phlthydelphya"],
             designers=["phlthydelphya"],
             copyright="© 2026 phlthydelphya",

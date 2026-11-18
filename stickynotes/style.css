@@ -1,7 +1,7 @@
 /* Layout and shape. Per-color rules come from palette.build_css(). */
 
 /* Header and window share one radius; a theme with rounder headerbars (20px in
-   the Dusk desktop's theme, still in development) would otherwise curve inside the note's clip and
+   ClocheOS's theme, still in development) would otherwise curve inside the note's clip and
    show the body color in the corners. */
 window.sticky,
 window.sticky.maximized, window.sticky.tiled, window.sticky.tiled-top,
@@ -29,7 +29,7 @@ window.sticky:backdrop headerbar button {
   opacity: 0;
 }
 
-/* Some themes (the in-development Dusk desktop's among them) inset toolbarview content
+/* Some themes (ClocheOS's, still in development, among them) inset toolbarview content
    as a rounded panel; a note is one sheet of paper. */
 window.sticky toolbarview > scrolledwindow {
   margin: 0;

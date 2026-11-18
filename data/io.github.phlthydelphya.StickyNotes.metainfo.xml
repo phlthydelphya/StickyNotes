@@ -4,14 +4,14 @@
   <id>io.github.phlthydelphya.StickyNotes</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <name>Sticky Notes</name>
+  <name>Sticky Gnotes</name>
   <summary>Quick colored notes on your desktop</summary>
   <developer id="io.github.phlthydelphya">
     <name>phlthydelphya</name>
   </developer>
   <description>
     <p>
-      Sticky Notes keeps quick colored notes in a searchable list. Any note can pop out
+      Sticky Gnotes keeps quick colored notes in a searchable list. Any note can pop out
       into its own small window on the desktop.
     </p>
     <ul>

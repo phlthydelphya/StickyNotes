@@ -31,7 +31,7 @@ Recommends: tesseract-ocr,
             xdg-desktop-portal,
 Suggests: gnome-shell-extension-appindicator,
 Description: colored sticky notes for GNOME
- Sticky Notes keeps quick colored notes in a searchable list. Any note
+ Sticky Gnotes keeps quick colored notes in a searchable list. Any note
  can pop out into its own small window on the desktop.
  .
  Notes support bold, italic, underline, strikethrough, bullet,

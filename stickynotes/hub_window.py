@@ -42,7 +42,7 @@ def format_time(ts):
 
 class HubWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Sticky Notes", default_width=DEFAULT_WIDTH,
+        super().__init__(application=app, title="Sticky Gnotes", default_width=DEFAULT_WIDTH,
                          default_height=DEFAULT_HEIGHT)
         self.app = app
         self.store = app.store
@@ -55,7 +55,7 @@ class HubWindow(Adw.ApplicationWindow):
         self._editing = None  # the row whose card is open in the inline editor
         self.connect("close-request", self._on_close_request)
 
-        self.window_title = Adw.WindowTitle(title="Sticky Notes")
+        self.window_title = Adw.WindowTitle(title="Sticky Gnotes")
         self._save_listener = self.store.connect_save_state(self._update_save_state)
         self._update_save_state()
         header = Adw.HeaderBar(title_widget=self.window_title)
@@ -80,7 +80,7 @@ class HubWindow(Adw.ApplicationWindow):
                                     | GObject.BindingFlags.SYNC_CREATE)
         menu = Gio.Menu()
         menu.append("Preferences", "app.preferences")
-        menu.append("About Sticky Notes", "app.about")
+        menu.append("About Sticky Gnotes", "app.about")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                        tooltip_text="Main menu", primary=True))
         header.pack_end(search_toggle)

@@ -1,4 +1,4 @@
-# Flatpak build of Sticky Notes. Local build from this checkout:
+# Flatpak build of Sticky Gnotes. Local build from this checkout:
 #   flatpak run org.flatpak.Builder --user --install --force-clean \
 #     build-aux/flatpak/build build-aux/flatpak/io.github.phlthydelphya.StickyNotes.yml
 # For the Flathub submission, replace the last module's `dir` source with the

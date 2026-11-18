@@ -103,7 +103,7 @@ def set_autostart(enabled, launcher=None):
     content = (
         "[Desktop Entry]\n"
         "Type=Application\n"
-        "Name=Sticky Notes\n"
+        "Name=Sticky Gnotes\n"
         "Comment=Reopen your sticky notes at login\n"
         f"Exec={command} --restore\n"
         f"Icon={APP_ID}\n"

@@ -59,7 +59,7 @@ class NoteWindow(Adw.Window):
     def _build_menu(self, button):
         button.set_popover(note_menu.popover(
             self.note, (("Notes List", "app.show-list"), ("Delete Note", "win.delete"),
-                        ("About Sticky Notes", "app.about")), self.set_color))
+                        ("About Sticky Gnotes", "app.about")), self.set_color))
 
     def _on_active_changed(self, *_):
         self.toolbar.set_reveal_bottom_bars(self.is_active())

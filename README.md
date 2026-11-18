@@ -1,7 +1,7 @@
-# Dusk Sticky Notes
+# Sticky Gnotes
 
 Sticky notes for GNOME, modeled on the Sticky Notes in Microsoft OneNote / Windows.
-It is being made for Dusk OS and the Dusk desktop, both still in development and not
+It is being made for ClocheOS, still in development and not
 released; until then it runs on any GNOME session.
 Python + PyGObject, GTK 4 + libadwaita. App ID: `io.github.phlthydelphya.StickyNotes`
 (`org.duskos.StickyNotes` before 1.0.1; a start-at-login entry under the old ID moves
@@ -40,7 +40,7 @@ over by itself, and notes and settings never depended on the ID).
 - Deleting a note shows "Note deleted" with Undo for a few seconds, instead of asking first.
 - Reminders: pick In 1 hour, This evening, Tomorrow morning, Next week or any time. When it
   comes, the note pops out and a notification offers Snooze (10 min) and Done. Reminders
-  need Sticky Notes running (it stays in the tray); one missed while it was closed shows
+  need Sticky Gnotes running (it stays in the tray); one missed while it was closed shows
   at the next start.
 - The pop-out button on a card floats that note in its own window; its card stays in the
   list and the button brings the window forward. Closing the window puts it back.
@@ -87,14 +87,14 @@ shade, and the notes list cards use the same ones, so a yellow note looks like a
 note in any theme.
 
 **Desktop themes with one variant in gtk.css.** Some theme installers (theme-unifier,
-for example, and the Dusk desktop, still in development) put a single variant of a theme into
+for example, and ClocheOS, still in development) put a single variant of a theme into
 `~/.config/gtk-4.0/gtk.css`, as an `@import` of the theme's `gtk.css` (light) or
 `gtk-dark.css` (dark). GTK applies that file to every app whatever the app's own style,
 so an app set to Light on a dark desktop would get light libadwaita under dark theme
-colors. Sticky Notes reads that import and, when its style is the other one, loads the
+colors. Sticky Gnotes reads that import and, when its style is the other one, loads the
 theme's other variant from the same folder:
 
-| Desktop gtk.css imports | App style shown | Sticky Notes also loads |
+| Desktop gtk.css imports | App style shown | Sticky Gnotes also loads |
 |---|---|---|
 | `…/gtk-dark.css` | Light | `…/gtk.css` (the theme's light colors) |
 | `…/gtk.css` | Dark | `…/gtk-dark.css` (the theme's dark colors) |
@@ -115,13 +115,13 @@ accent colors). Details:
 - Your own rules in `~/.config/gtk-4.0/gtk.css` (anything besides the theme import) are
   applied again on top of the other variant, so they still win over the theme as they do
   on the desktop. Relative `url()`s in them are resolved against `~/.config/gtk-4.0/`.
-- Sticky Notes watches `~/.config/gtk-4.0/gtk.css` and rereads it shortly after the
+- Sticky Gnotes watches `~/.config/gtk-4.0/gtk.css` and rereads it shortly after the
   desktop theme changes (once per change, even when the file is replaced). A theme that
   rewrites its own files without touching gtk.css shows its new colors after Sticky
   Notes restarts.
 - The variant is told by file name only: `gtk-dark.css` is the dark one, `gtk.css` the
   light one. A dark-only theme whose `gtk.css` is dark still shows its dark colors when
-  Sticky Notes is set to Light.
+  Sticky Gnotes is set to Light.
 
 ## Shortcuts
 
@@ -164,6 +164,6 @@ writes fail, the process logs both errors and exits with status 1.
 
 ## License
 
-Dusk Sticky Notes is licensed under the GNU General Public License,
+Sticky Gnotes is licensed under the GNU General Public License,
 version 3 or (at your option) any later version (`GPL-3.0-or-later`).
 See [LICENSE](LICENSE) for the full license text.

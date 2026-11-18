@@ -5,7 +5,7 @@
 #   sudo ./install-search-provider.sh               # install
 #   sudo ./install-search-provider.sh --uninstall   # remove
 # Run ./install.sh first (as your user): it installs the app and the D-Bus
-# service that lets GNOME Shell start Sticky Notes for a search.
+# service that lets GNOME Shell start Sticky Gnotes for a search.
 set -euo pipefail
 
 NAME=io.github.phlthydelphya.StickyNotes.search-provider.ini
