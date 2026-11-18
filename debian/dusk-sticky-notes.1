@@ -1,0 +1,28 @@
+.TH DUSK-STICKY-NOTES 1 "November 2026" "dusk-sticky-notes 1.0.0" "User Commands"
+.SH NAME
+dusk-sticky-notes \- colored sticky notes for GNOME
+.SH SYNOPSIS
+.B dusk-sticky-notes
+[\fIOPTION\fR]
+.SH DESCRIPTION
+Opens the notes list and reopens the notes that were popped out.
+If Sticky Notes is already running, the running instance handles the request.
+.SH OPTIONS
+.TP
+.BR \-n ", " \-\-new\-note
+Open a new note.
+.TP
+.B \-\-new\-from\-selection
+Open a new note with the selected text.
+.TP
+.B \-\-restore
+Reopen only the popped-out notes, as at login.
+.TP
+.B \-\-help
+Show all options, including the GApplication ones.
+.SH FILES
+.TP
+.I ~/.local/share/dusk-sticky-notes/
+The notes and their images.
+.SH SEE ALSO
+https://github.com/phlthydelphya/StickyNotes

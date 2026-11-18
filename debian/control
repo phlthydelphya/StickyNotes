@@ -1,0 +1,41 @@
+Source: dusk-sticky-notes
+Section: utils
+Priority: optional
+Maintainer: phlthydelphya <phlthydelphya@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               python3,
+               appstream <!nocheck>,
+               desktop-file-utils <!nocheck>,
+               python3-pytest <!nocheck>,
+               python3-gi <!nocheck>,
+               gir1.2-gtk-4.0 <!nocheck>,
+               gir1.2-adw-1 <!nocheck>,
+               gir1.2-graphene-1.0 <!nocheck>,
+               xvfb <!nocheck>,
+               xauth <!nocheck>,
+Standards-Version: 4.7.0
+Homepage: https://github.com/phlthydelphya/StickyNotes
+Rules-Requires-Root: no
+
+Package: dusk-sticky-notes
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         python3-gi,
+         gir1.2-glib-2.0,
+         gir1.2-gtk-4.0 (>= 4.10),
+         gir1.2-adw-1 (>= 1.5),
+         gir1.2-graphene-1.0,
+Recommends: tesseract-ocr,
+            xdg-desktop-portal,
+Suggests: gnome-shell-extension-appindicator,
+Description: colored sticky notes for GNOME
+ Sticky Notes keeps quick colored notes in a searchable list. Any note
+ can pop out into its own small window on the desktop.
+ .
+ Notes support bold, italic, underline, strikethrough, bullet,
+ numbered and check lists, links and images. Reminders pop a note out
+ with a notification. Screenshots go into a note through the desktop
+ portal, and with tesseract-ocr installed the text in images is
+ searchable. Notes also show up in the GNOME Activities search.

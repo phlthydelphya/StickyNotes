@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python3
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	appstreamcli validate --no-net --pedantic data/org.duskos.StickyNotes.metainfo.xml
+	desktop-file-validate data/org.duskos.StickyNotes.desktop
+	HOME=$$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 \
+		xvfb-run -a python3 -m pytest -q -p no:cacheprovider
+endif
+
+override_dh_install:
+	dh_install -X__pycache__
+
+# The app lives in a private directory, outside site-packages.
+override_dh_python3:
+	dh_python3 usr/share/dusk-sticky-notes

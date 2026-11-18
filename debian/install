@@ -1,0 +1,8 @@
+stickynotes usr/share/dusk-sticky-notes
+dusk-sticky-notes usr/share/dusk-sticky-notes
+data/org.duskos.StickyNotes.desktop usr/share/applications
+data/org.duskos.StickyNotes.svg usr/share/icons/hicolor/scalable/apps
+data/org.duskos.StickyNotes-symbolic.svg usr/share/icons/hicolor/symbolic/apps
+data/org.duskos.StickyNotes.search-provider.ini usr/share/gnome-shell/search-providers
+data/org.duskos.StickyNotes.metainfo.xml usr/share/metainfo
+debian/org.duskos.StickyNotes.service usr/share/dbus-1/services

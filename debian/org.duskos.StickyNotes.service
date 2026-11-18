@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.duskos.StickyNotes
+Exec=/usr/bin/dusk-sticky-notes --gapplication-service

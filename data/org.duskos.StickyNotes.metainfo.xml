@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<component type="desktop-application">
+  <id>org.duskos.StickyNotes</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Sticky Notes</name>
+  <summary>Quick colored notes on your desktop</summary>
+  <developer id="io.github.phlthydelphya">
+    <name>phlthydelphya</name>
+  </developer>
+  <description>
+    <p>
+      Sticky Notes keeps quick colored notes in a searchable list. Any note can pop out
+      into its own small window on the desktop.
+    </p>
+    <ul>
+      <li>Bold, italic, underline and strikethrough text, images and links</li>
+      <li>Bullet, numbered and check lists</li>
+      <li>Seven note colors, with light and dark palettes</li>
+      <li>Reminders that pop the note out with a notification</li>
+      <li>Screenshots straight into a note, and search that finds the text in images</li>
+      <li>Notes in the GNOME Activities search</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.duskos.StickyNotes.desktop</launchable>
+  <provides>
+    <binary>dusk-sticky-notes</binary>
+    <dbus type="user">org.duskos.StickyNotes</dbus>
+  </provides>
+  <url type="homepage">https://github.com/phlthydelphya/StickyNotes</url>
+  <url type="bugtracker">https://github.com/phlthydelphya/StickyNotes/issues</url>
+  <url type="vcs-browser">https://github.com/phlthydelphya/StickyNotes</url>
+  <branding>
+    <color type="primary" scheme_preference="light">#f8e48b</color>
+    <color type="primary" scheme_preference="dark">#5e5320</color>
+  </branding>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-11-17">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>
