@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """App style (follow system, light or dark) and the desktop theme's other variant.
 
-A desktop theme such as Dusk installs one variant into ~/.config/gtk-4.0/gtk.css,
-which GTK applies to every app at USER priority whatever the app's color scheme.
+A desktop theme installer (theme-unifier, for example, and the Dusk desktop,
+still in development) puts one variant of a theme into ~/.config/gtk-4.0/gtk.css,
+usually as an @import of the theme's gtk.css or gtk-dark.css. GTK applies that
+file to every app at USER priority, whatever the app's color scheme.
 When the app shows the other scheme than the one that file imports (light while
 it imports gtk-dark.css, or dark while it imports gtk.css), the app loads the
 theme's other variant from the same folder above USER priority, so the chrome

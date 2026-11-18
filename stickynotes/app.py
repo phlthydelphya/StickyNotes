@@ -317,7 +317,7 @@ class StickyApp(Adw.Application):
             application_icon=APP_ID,
             developer_name="phlthydelphya",
             version=__version__,
-            comments="Quick colored notes for the Dusk desktop.",
+            comments="Quick colored notes for GNOME. Made for the Dusk desktop, still in development.",
             developers=["phlthydelphya"],
             designers=["phlthydelphya"],
             copyright="© 2026 phlthydelphya",
