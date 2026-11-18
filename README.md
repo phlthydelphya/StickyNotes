@@ -98,9 +98,16 @@ accent colors). Details:
   `/* … */` comments are ignored.
 - Each variant file is read once while it stays current; switching style only adds or
   removes it.
-- Sticky Notes watches `~/.config/gtk-4.0/gtk.css` and rereads it when the desktop theme
-  changes. A theme that rewrites its own files without touching gtk.css shows its new
-  colors after Sticky Notes restarts.
+- Your own rules in `~/.config/gtk-4.0/gtk.css` (anything besides the theme import) are
+  applied again on top of the other variant, so they still win over the theme as they do
+  on the desktop. Relative `url()`s in them are resolved against `~/.config/gtk-4.0/`.
+- Sticky Notes watches `~/.config/gtk-4.0/gtk.css` and rereads it shortly after the
+  desktop theme changes (once per change, even when the file is replaced). A theme that
+  rewrites its own files without touching gtk.css shows its new colors after Sticky
+  Notes restarts.
+- The variant is told by file name only: `gtk-dark.css` is the dark one, `gtk.css` the
+  light one. A dark-only theme whose `gtk.css` is dark still shows its dark colors when
+  Sticky Notes is set to Light.
 
 ## Shortcuts
 

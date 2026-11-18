@@ -74,14 +74,33 @@ def test_imported_variant_finds_the_other_variant_both_ways(tmp_path):
     (theme / "gtk-dark.css").write_text("")
     assert imported_variant(tmp_path) is None  # no light sibling
     (theme / "gtk.css").write_text("")
-    assert imported_variant(tmp_path) == (True, theme / "gtk.css")
+    assert imported_variant(tmp_path)[:2] == (True, theme / "gtk.css")
     _theme_dirs(tmp_path, "gtk.css", quote="'")
-    assert imported_variant(tmp_path) == (False, theme / "gtk-dark.css")
+    assert imported_variant(tmp_path)[:2] == (False, theme / "gtk-dark.css")
     _theme_dirs(tmp_path, "gtk.css", quote="")
-    assert imported_variant(tmp_path) == (False, theme / "gtk-dark.css")
+    assert imported_variant(tmp_path)[:2] == (False, theme / "gtk-dark.css")
     uri = (theme / "gtk-dark.css").as_uri()
     (user / "gtk.css").write_text(f'/* @import url("{uri}"); */\n')
     assert imported_variant(tmp_path) is None  # commented out
+
+
+def test_variant_css_keeps_the_users_own_rules_on_top(tmp_path):
+    from stickynotes.theme import imported_variant
+    theme, user = _theme_dirs(tmp_path, "gtk-dark.css")
+    (theme / "gtk-dark.css").write_text("")
+    (theme / "gtk.css").write_text("")
+    dark_uri = (theme / "gtk-dark.css").as_uri()
+    (user / "gtk.css").write_text(
+        f'@import url("{dark_uri}");\n'
+        'window.maximized { border-radius: 20px; }\n'
+        '.logo { background-image: url("img/logo.png"); }\n'
+        '.web { background-image: url("https://example.org/a.png"); }\n')
+    css = imported_variant(tmp_path).css()
+    light = css.index(f'@import url("{(theme / "gtk.css").as_uri()}");')
+    assert light == 0 and dark_uri not in css  # variant first, dark import gone
+    assert css.index("border-radius: 20px") > light  # user rule after it, so it wins
+    assert f'url("{(user / "img" / "logo.png").as_uri()}")' in css  # relative url rebased
+    assert 'url("https://example.org/a.png")' in css
 
 
 def test_theme_variant_attaches_only_the_mismatched_variant(tmp_path):
@@ -90,23 +109,53 @@ def test_theme_variant_attaches_only_the_mismatched_variant(tmp_path):
     (theme / "gtk-dark.css").write_text("")
     (theme / "gtk.css").write_text("")
     attached, loads = [], []
-    tv = ThemeVariant(tmp_path, attached.append, attached.remove,
-                      load=lambda p: loads.append(p) or ("css", p), monitor=False)
+
+    def load(css):
+        loads.append(css)
+        return css.splitlines()[0]
+    tv = ThemeVariant(tmp_path, attached.append, attached.remove, load=load, monitor=False)
+    light = f'@import url("{(theme / "gtk.css").as_uri()}");'
+    dark = f'@import url("{(theme / "gtk-dark.css").as_uri()}");'
     tv.update(True)
     assert attached == []  # desktop already dark
     tv.update(False)
-    assert attached == [("css", theme / "gtk.css")]
+    assert attached == [light]
     tv.update(True)
     tv.update(False)
-    assert attached == [("css", theme / "gtk.css")] and len(loads) == 1  # parsed once
+    assert attached == [light] and len(loads) == 1  # parsed once
     _theme_dirs(tmp_path, "gtk.css")  # desktop switched to its light variant
     tv.reload()
     assert attached == []
     tv.update(True)
-    assert attached == [("css", theme / "gtk-dark.css")]
+    assert attached == [dark]
     (user / "gtk.css").write_text("")
     tv.reload()
     assert attached == []
+
+
+def test_theme_variant_reloads_once_after_gtk_css_changes(tmp_path):
+    from gi.repository import Gio, GLib
+    from stickynotes.theme import ThemeVariant
+    theme, user = _theme_dirs(tmp_path, "gtk-dark.css")
+    (theme / "gtk-dark.css").write_text("")
+    (theme / "gtk.css").write_text("")
+    attached, loads = [], []
+    tv = ThemeVariant(tmp_path, attached.append, attached.remove,
+                      load=lambda css: loads.append(css) or css, monitor=False)
+    tv.RELOAD_DELAY_MS = 0
+    tv.update(False)
+    assert len(attached) == 1
+    _theme_dirs(tmp_path, "gtk.css")  # atomic rewrite: CREATED, then CHANGES_DONE_HINT
+    E = Gio.FileMonitorEvent
+    tv._on_changed(None, None, None, E.CHANGED)  # ignored: not finished yet
+    assert not tv._reload_source
+    tv._on_changed(None, None, None, E.CREATED)
+    tv._on_changed(None, None, None, E.CHANGES_DONE_HINT)
+    while tv._reload_source:
+        GLib.MainContext.default().iteration(True)
+    assert attached == [] and len(loads) == 1  # one reload; light desktop, light app
+    tv.update(True)
+    assert len(loads) == 2
 
 
 def test_autostart_file_round_trip(tmp_path):
