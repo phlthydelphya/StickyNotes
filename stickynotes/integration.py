@@ -6,6 +6,7 @@ list), so the preferences switches, the installer and the uninstaller agree.
 Needs Gio only, no display, so install.sh can call it.
 """
 
+import itertools
 import os
 import shlex
 import shutil
@@ -14,7 +15,9 @@ from pathlib import Path
 
 from gi.repository import Gio, GLib
 
-APP_ID = "org.duskos.StickyNotes"
+APP_ID = "io.github.phlthydelphya.StickyNotes"
+# Releases before 1.0.1 used this ID; their autostart entry carries its name.
+OLD_APP_ID = "org.duskos.StickyNotes"
 LAUNCHER = "dusk-sticky-notes"
 SHORTCUT = "<Control><Alt>n"
 SHORTCUT_LABEL = "Ctrl+Alt+N"
@@ -30,6 +33,24 @@ SHORTCUTS = {
     SELECTION_PATH: ("New sticky note from selected text", "--new-from-selection",
                      "<Control><Alt><Shift>n"),
 }
+
+
+PORTAL = "org.freedesktop.portal.Desktop"
+PORTAL_PATH = "/org/freedesktop/portal/desktop"
+BACKGROUND = "org.freedesktop.portal.Background"
+REQUEST = "org.freedesktop.portal.Request"
+_tokens = itertools.count(1)
+
+
+def in_flatpak():
+    return os.path.exists("/.flatpak-info")
+
+
+def host_config_dir():
+    """The desktop's config dir. In a Flatpak, GLib's points into the sandbox."""
+    if in_flatpak():
+        return os.environ.get("HOST_XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return GLib.get_user_config_dir()
 
 
 def launcher_path():
@@ -57,7 +78,16 @@ def autostart_file():
     return Path(GLib.get_user_config_dir()) / "autostart" / f"{APP_ID}.desktop"
 
 
+def _old_autostart_file():
+    return autostart_file().with_name(f"{OLD_APP_ID}.desktop")
+
+
 def autostart_enabled():
+    old = _old_autostart_file()
+    if old.is_file():
+        # An entry from before the ID change: replace it with one under the new name.
+        old.unlink()
+        set_autostart(True)
     return autostart_file().is_file()
 
 
@@ -65,6 +95,9 @@ def set_autostart(enabled, launcher=None):
     path = autostart_file()
     if not enabled:
         path.unlink(missing_ok=True)
+        _old_autostart_file().unlink(missing_ok=True)
+        if in_flatpak():
+            request_background(False)
         return
     command = _desktop_exec_quote(launcher or launcher_path())
     content = (
@@ -82,11 +115,58 @@ def set_autostart(enabled, launcher=None):
     tmp = path.with_suffix(".desktop.tmp")
     tmp.write_text(content, encoding="utf-8")
     os.replace(tmp, path)
+    if in_flatpak():
+        # The file above stays in the sandbox and only records the choice;
+        # the Background portal writes the entry the desktop reads.
+        request_background(True)
+
+
+def request_background(autostart, conn=None):
+    """Ask the Background portal to add or remove the login entry. When the
+    portal or the user refuses, the sandbox's record is removed too."""
+    def refused(message):
+        print(f"dusk-sticky-notes: start at login not changed: {message}", file=sys.stderr)
+        if autostart:
+            autostart_file().unlink(missing_ok=True)
+
+    try:
+        conn = conn or Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    except GLib.Error as err:
+        refused(err.message)
+        return
+    token = f"stickynotes{os.getpid()}_{next(_tokens)}"
+    sender = conn.get_unique_name().lstrip(":").replace(".", "_")
+    handle = f"{PORTAL_PATH}/request/{sender}/{token}"
+    sub = []
+
+    def on_response(_conn, _sender, _path, _iface, _signal, params):
+        conn.signal_unsubscribe(sub[0])
+        code, results = params.unpack()
+        if code != 0 or results.get("autostart", autostart) != autostart:
+            refused("the request was declined")
+
+    sub.append(conn.signal_subscribe(PORTAL, REQUEST, "Response", handle, None,
+                                     Gio.DBusSignalFlags.NONE, on_response))
+    options = {
+        "handle_token": GLib.Variant("s", token),
+        "reason": GLib.Variant("s", "Reopen your sticky notes at login"),
+        "autostart": GLib.Variant("b", autostart),
+        "commandline": GLib.Variant("as", [LAUNCHER, "--restore"]),
+    }
+    try:
+        conn.call_sync(PORTAL, PORTAL_PATH, BACKGROUND, "RequestBackground",
+                       GLib.Variant("(sa{sv})", ("", options)), GLib.VariantType("(o)"),
+                       Gio.DBusCallFlags.NONE, -1, None)
+    except GLib.Error as err:
+        conn.signal_unsubscribe(sub[0])
+        refused(err.message)
 
 
 # --- global shortcut -------------------------------------------------------------
 
 def shortcut_supported():
+    if in_flatpak():
+        return False  # the desktop's GNOME settings are out of the sandbox's reach
     source = Gio.SettingsSchemaSource.get_default()
     return bool(source and source.lookup(MEDIA_KEYS, True) and source.lookup(CUSTOM_KEY, True))
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: CC0-1.0 -->
 <component type="desktop-application">
-  <id>org.duskos.StickyNotes</id>
+  <id>io.github.phlthydelphya.StickyNotes</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Sticky Notes</name>
@@ -23,10 +23,10 @@
       <li>Notes in the GNOME Activities search</li>
     </ul>
   </description>
-  <launchable type="desktop-id">org.duskos.StickyNotes.desktop</launchable>
+  <launchable type="desktop-id">io.github.phlthydelphya.StickyNotes.desktop</launchable>
   <provides>
     <binary>dusk-sticky-notes</binary>
-    <dbus type="user">org.duskos.StickyNotes</dbus>
+    <dbus type="user">io.github.phlthydelphya.StickyNotes</dbus>
   </provides>
   <url type="homepage">https://github.com/phlthydelphya/StickyNotes</url>
   <url type="bugtracker">https://github.com/phlthydelphya/StickyNotes/issues</url>
@@ -44,6 +44,12 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.1" date="2026-11-17">
+      <description>
+        <p>The app ID is now io.github.phlthydelphya.StickyNotes. A start-at-login entry
+        from 1.0.0 moves to the new name by itself; notes and settings stay where they are.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-11-17">
       <description>
         <p>First release.</p>

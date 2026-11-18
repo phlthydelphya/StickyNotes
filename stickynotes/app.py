@@ -13,7 +13,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import __version__  # noqa: E402
+from . import __version__, integration  # noqa: E402
 from .hub_window import HubWindow  # noqa: E402
 from .note_window import NoteWindow  # noqa: E402
 from .ocr import OcrIndex  # noqa: E402
@@ -25,7 +25,7 @@ from .store import LoadState, NoteStore  # noqa: E402
 from .theme import ThemeVariant, color_scheme  # noqa: E402
 from .tray import Tray  # noqa: E402
 
-APP_ID = "org.duskos.StickyNotes"
+APP_ID = "io.github.phlthydelphya.StickyNotes"
 STYLE = Path(__file__).with_name("style.css")
 
 ACCELS = {
@@ -90,7 +90,7 @@ class StickyApp(Adw.Application):
         # The desktop theme's other variant sits between USER and the notes' own CSS.
         user = Gtk.STYLE_PROVIDER_PRIORITY_USER
         self._theme = ThemeVariant(
-            GLib.get_user_config_dir(),
+            integration.host_config_dir(),
             attach=lambda p: Gtk.StyleContext.add_provider_for_display(display, p, user + 1),
             detach=lambda p: Gtk.StyleContext.remove_provider_for_display(display, p))
         priority = user + 2

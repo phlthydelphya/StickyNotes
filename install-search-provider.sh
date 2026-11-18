@@ -8,7 +8,9 @@
 # service that lets GNOME Shell start Sticky Notes for a search.
 set -euo pipefail
 
-NAME=org.duskos.StickyNotes.search-provider.ini
+NAME=io.github.phlthydelphya.StickyNotes.search-provider.ini
+# Installed by releases before 1.0.1, under the old app ID.
+OLD_NAME=org.duskos.StickyNotes.search-provider.ini
 DIR=/usr/local/share/gnome-shell/search-providers
 SRC=$(cd "$(dirname "$0")" && pwd)/data/$NAME
 
@@ -18,11 +20,12 @@ if (( EUID != 0 )); then
 fi
 case "${1:-}" in
   --uninstall)
-    rm -f -- "$DIR/$NAME"
+    rm -f -- "$DIR/$NAME" "$DIR/$OLD_NAME"
     echo "Removed $DIR/$NAME"
     ;;
   "")
     install -D -m 644 -- "$SRC" "$DIR/$NAME"
+    rm -f -- "$DIR/$OLD_NAME"
     echo "Installed $DIR/$NAME"
     echo "Log out and back in so GNOME Shell loads it."
     ;;

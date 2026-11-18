@@ -5,8 +5,8 @@
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	appstreamcli validate --no-net --pedantic data/org.duskos.StickyNotes.metainfo.xml
-	desktop-file-validate data/org.duskos.StickyNotes.desktop
+	appstreamcli validate --no-net --pedantic data/io.github.phlthydelphya.StickyNotes.metainfo.xml
+	desktop-file-validate data/io.github.phlthydelphya.StickyNotes.desktop
 	HOME=$$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 \
 		xvfb-run -a python3 -m pytest -q -p no:cacheprovider
 endif

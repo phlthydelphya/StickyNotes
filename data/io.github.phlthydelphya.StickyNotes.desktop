@@ -2,7 +2,7 @@
 Name=Sticky Notes
 Comment=Quick colored notes on your desktop
 Exec=dusk-sticky-notes
-Icon=org.duskos.StickyNotes
+Icon=io.github.phlthydelphya.StickyNotes
 Terminal=false
 Type=Application
 Categories=Utility;GTK;

@@ -174,6 +174,23 @@ def test_autostart_file_round_trip(tmp_path):
     assert "X-GNOME-Autostart-enabled=true" in out
 
 
+def test_autostart_entry_from_old_app_id_is_renamed(tmp_path):
+    out = run_isolated(tmp_path, """
+        from stickynotes import integration as i
+        old = i.autostart_file().with_name(i.OLD_APP_ID + ".desktop")
+        old.parent.mkdir(parents=True)
+        old.write_text("[Desktop Entry]\\nExec=dusk-sticky-notes --restore\\n")
+        assert i.autostart_enabled()
+        assert not old.exists()
+        print(i.autostart_file().read_text())
+        old.write_text("x")
+        i.set_autostart(False)
+        assert not old.exists() and not i.autostart_enabled()
+    """)
+    assert "Icon=io.github.phlthydelphya.StickyNotes" in out
+    assert "--restore" in out
+
+
 def test_shortcut_add_remove_keeps_other_bindings(tmp_path):
     out = run_isolated(tmp_path, """
         from gi.repository import Gio
@@ -285,3 +302,80 @@ def test_preference_switches_revert_when_change_fails(monkeypatch, tmp_path):
     assert dialog.style_row.get_selected() == 0
     dialog.style_row.set_selected(1)
     assert styles == ["light"]
+
+
+class FakePortalBus:
+    """Records the Background request and replays one Response signal."""
+
+    def __init__(self, response=None, fail=False):
+        self.response, self.fail = response, fail
+        self.calls, self.handlers, self.unsubscribed = [], {}, []
+
+    def get_unique_name(self):
+        return ":1.42"
+
+    def signal_subscribe(self, sender, iface, member, path, arg0, flags, callback):
+        self.handlers[path] = callback
+        return 7
+
+    def signal_unsubscribe(self, sub):
+        self.unsubscribed.append(sub)
+
+    def call_sync(self, name, path, iface, method, params, reply_type, flags, timeout, cancel):
+        from gi.repository import GLib
+        self.calls.append((iface, method, params.unpack()))
+        if self.fail:
+            raise GLib.Error("no portal")
+        if self.response is not None:
+            handle = next(iter(self.handlers))
+            self.handlers[handle](self, None, handle, None, "Response",
+                                  GLib.Variant("(ua{sv})", self.response))
+
+
+def flatpak_integration(tmp_path, monkeypatch):
+    from stickynotes import integration
+    marker = tmp_path / "autostart" / f"{integration.APP_ID}.desktop"
+    marker.parent.mkdir()
+    marker.write_text("x")
+    monkeypatch.setattr(integration, "in_flatpak", lambda: True)
+    monkeypatch.setattr(integration, "autostart_file", lambda: marker)
+    return integration, marker
+
+
+def test_background_portal_request_and_grant(tmp_path, monkeypatch):
+    from gi.repository import GLib
+    i, marker = flatpak_integration(tmp_path, monkeypatch)
+    bus = FakePortalBus(response=(0, {"autostart": GLib.Variant("b", True)}))
+    i.request_background(True, conn=bus)
+    (iface, method, (parent, options)), = bus.calls
+    assert (iface, method, parent) == (i.BACKGROUND, "RequestBackground", "")
+    assert options["autostart"] is True
+    assert options["commandline"] == ["dusk-sticky-notes", "--restore"]
+    token = options["handle_token"]
+    assert list(bus.handlers) == [f"{i.PORTAL_PATH}/request/1_42/{token}"]
+    assert bus.unsubscribed == [7] and marker.exists()
+
+
+def test_background_portal_refusal_clears_the_switch(tmp_path, monkeypatch):
+    from gi.repository import GLib
+    i, marker = flatpak_integration(tmp_path, monkeypatch)
+    i.request_background(True, conn=FakePortalBus(response=(1, {})))
+    assert not marker.exists()
+    marker.write_text("x")
+    i.request_background(True, conn=FakePortalBus(response=(0, {"autostart": GLib.Variant("b", False)})))
+    assert not marker.exists()
+    marker.write_text("x")
+    bus = FakePortalBus(fail=True)
+    i.request_background(True, conn=bus)
+    assert not marker.exists() and bus.unsubscribed == [7]
+
+
+def test_flatpak_has_no_shortcut_and_reads_the_host_config(monkeypatch):
+    from stickynotes import integration as i
+    monkeypatch.setattr(i, "in_flatpak", lambda: True)
+    assert not i.shortcut_supported() and not i.shortcut_enabled()
+    assert not i.set_shortcut(True)
+    monkeypatch.setenv("HOST_XDG_CONFIG_HOME", "/home/u/.config")
+    assert i.host_config_dir() == "/home/u/.config"
+    monkeypatch.delenv("HOST_XDG_CONFIG_HOME")
+    assert i.host_config_dir() == str(Path.home() / ".config")

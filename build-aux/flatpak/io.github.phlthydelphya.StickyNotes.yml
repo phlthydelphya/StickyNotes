@@ -1,0 +1,101 @@
+# Flatpak build of Sticky Notes. Local build from this checkout:
+#   flatpak run org.flatpak.Builder --user --install --force-clean \
+#     build-aux/flatpak/build build-aux/flatpak/io.github.phlthydelphya.StickyNotes.yml
+# For the Flathub submission, replace the last module's `dir` source with the
+# release tag: type: git, url: https://github.com/phlthydelphya/StickyNotes.git,
+# tag: vX.Y.Z, commit: <full hash>.
+id: io.github.phlthydelphya.StickyNotes
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: dusk-sticky-notes
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Tray icon (StatusNotifierItem)
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # The desktop theme's gtk.css, to swap in its other variant (Preferences > Style)
+  - --filesystem=xdg-config/gtk-4.0:ro
+  - --env=TESSDATA_PREFIX=/app/share/tessdata
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /share/man
+  - '*.a'
+modules:
+  # Reads the text in images, so search finds it
+  - name: leptonica
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DBUILD_PROG=OFF
+      - -DSW_BUILD=OFF
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz
+        sha256: c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7
+        x-checker-data:
+          type: anitya
+          project-id: 1549
+          url-template: https://github.com/DanBloomberg/leptonica/releases/download/$version/leptonica-$version.tar.gz
+
+  - name: tesseract
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DBUILD_TESTS=OFF
+      - -DGRAPHICS_DISABLED=ON
+      - -DDISABLE_ARCHIVE=ON
+      - -DDISABLE_CURL=ON
+      - -DOPENMP_BUILD=OFF
+      - -DENABLE_LTO=OFF
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.4.tar.gz
+        sha256: a8dbf8b8c8ee427ff6ad1d99116502feaf59440af1adb893caf60a6576826cf4
+        x-checker-data:
+          type: anitya
+          project-id: 4954
+          url-template: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/$version.tar.gz
+
+  - name: tessdata-eng
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 eng.traineddata /app/share/tessdata/eng.traineddata
+    sources:
+      - type: file
+        url: https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/eng.traineddata
+        sha256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+
+  - name: stickynotes
+    buildsystem: simple
+    build-commands:
+      - install -d /app/share/dusk-sticky-notes /app/bin
+      - cp -r stickynotes /app/share/dusk-sticky-notes/
+      - install -m755 dusk-sticky-notes /app/share/dusk-sticky-notes/
+      - ln -s ../share/dusk-sticky-notes/dusk-sticky-notes /app/bin/dusk-sticky-notes
+      - python3 -m compileall -q /app/share/dusk-sticky-notes/stickynotes
+      - install -Dm644 data/${FLATPAK_ID}.desktop -t /app/share/applications
+      - install -Dm644 data/${FLATPAK_ID}.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 data/${FLATPAK_ID}.svg -t /app/share/icons/hicolor/scalable/apps
+      - install -Dm644 data/${FLATPAK_ID}-symbolic.svg -t /app/share/icons/hicolor/symbolic/apps
+      - install -Dm644 data/${FLATPAK_ID}.search-provider.ini -t /app/share/gnome-shell/search-providers
+      - printf '[D-BUS Service]\nName=%s\nExec=/app/bin/dusk-sticky-notes --gapplication-service\n'
+        "${FLATPAK_ID}" > service && install -Dm644 service /app/share/dbus-1/services/${FLATPAK_ID}.service
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - build-aux/flatpak/build
+          - build-aux/flatpak/.flatpak-builder
+          - debian
+          - tests

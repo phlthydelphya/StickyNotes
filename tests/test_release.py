@@ -212,7 +212,7 @@ def test_installer_preserves_working_copy(tmp_path):
                               capture_output=True, text=True).returncode == 0
     assert install().returncode == 0
     assert runs()
-    service = home / '.local/share/dbus-1/services/org.duskos.StickyNotes.service'
+    service = home / '.local/share/dbus-1/services/io.github.phlthydelphya.StickyNotes.service'
     assert f'Exec="{home}/.local/bin/dusk-sticky-notes" --gapplication-service' in service.read_text()
     module = checkout / 'stickynotes/app.py'
     module.write_text(module.read_text() + '\n# upgraded\n')

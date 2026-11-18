@@ -7,3 +7,7 @@ debian/files
 debian/*.substvars
 debian/*.debhelper*
 debian/debhelper-build-stamp
+build-aux/flatpak/build/
+build-aux/flatpak/.flatpak-builder/
+.flatpak-builder/
+repo/

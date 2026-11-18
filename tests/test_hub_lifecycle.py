@@ -37,7 +37,7 @@ class CountingHub(HubWindow):
 def app(tmp_path):
     if Gdk.Display.get_default() is None:
         pytest.skip('needs a display; run under xvfb-run')
-    application = Adw.Application(application_id="org.duskos.StickyNotes.Test" + uuid.uuid4().hex,
+    application = Adw.Application(application_id="io.github.phlthydelphya.StickyNotes.Test" + uuid.uuid4().hex,
                                   flags=Gio.ApplicationFlags.NON_UNIQUE)
     application.register(None)
     application.store = NoteStore(tmp_path)

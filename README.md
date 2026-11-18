@@ -3,7 +3,19 @@
 Sticky notes for GNOME, modeled on the Sticky Notes in Microsoft OneNote / Windows.
 It is being made for Dusk OS and the Dusk desktop, both still in development and not
 released; until then it runs on any GNOME session.
-Python + PyGObject, GTK 4 + libadwaita.
+Python + PyGObject, GTK 4 + libadwaita. App ID: `io.github.phlthydelphya.StickyNotes`
+(`org.duskos.StickyNotes` before 1.0.1; a start-at-login entry under the old ID moves
+over by itself, and notes and settings never depended on the ID).
+
+## Install
+
+- Debian/Ubuntu package `dusk-sticky-notes`, from the Dusk apt repository
+  (https://phlthydelphya.github.io/dusk-apt/), or built here with `dpkg-buildpackage -b`.
+  It includes the Activities search provider; no extra root step.
+- Flatpak: `build-aux/flatpak/io.github.phlthydelphya.StickyNotes.yml` (build command at the
+  top of the file). It bundles tesseract for the text in images. In the sandbox the global
+  shortcuts are not available, since GNOME's custom shortcuts are outside its reach, and
+  "Start at login" asks the desktop through the Background portal.
 
 ## Run
 

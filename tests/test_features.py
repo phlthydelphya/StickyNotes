@@ -367,7 +367,7 @@ def test_search_provider_over_dbus(tmp_path):
              | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION)
     server = Gio.DBusConnection.new_for_address_sync(address, flags, None, None)
     client = Gio.DBusConnection.new_for_address_sync(address, flags, None, None)
-    provider = search_provider.SearchProvider(app, "org.duskos.StickyNotes")
+    provider = search_provider.SearchProvider(app, "io.github.phlthydelphya.StickyNotes")
     provider.register(server)
     replies = []
 
@@ -410,7 +410,7 @@ def test_selection_source_and_capture_text():
 def hub_app(tmp_path):
     if Gdk.Display.get_default() is None:
         pytest.skip("needs a display; run under xvfb-run")
-    application = Adw.Application(application_id="org.duskos.StickyNotes.Test" + uuid.uuid4().hex,
+    application = Adw.Application(application_id="io.github.phlthydelphya.StickyNotes.Test" + uuid.uuid4().hex,
                                   flags=Gio.ApplicationFlags.NON_UNIQUE)
     application.register(None)
     application.store = NoteStore(tmp_path)

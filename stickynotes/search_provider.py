@@ -7,7 +7,7 @@ install-search-provider.sh) and starts the app through its D-Bus service file.""
 
 from gi.repository import Gio, GLib
 
-OBJECT_PATH = "/org/duskos/StickyNotes/SearchProvider"
+OBJECT_PATH = "/io/github/phlthydelphya/StickyNotes/SearchProvider"
 IFACE = "org.gnome.Shell.SearchProvider2"
 XML = f"""
 <node>

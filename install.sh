@@ -24,7 +24,7 @@ for arg in "$@"; do
   esac
 done
 
-APP_ID=org.duskos.StickyNotes
+APP_ID=io.github.phlthydelphya.StickyNotes
 SRC=$(cd "$(dirname "$0")" && pwd)
 LIB="$HOME/.local/lib/dusk-sticky-notes"
 BIN="$HOME/.local/bin/dusk-sticky-notes"
@@ -34,6 +34,14 @@ SYMBOLIC_ICON="$HOME/.local/share/icons/hicolor/symbolic/apps/$APP_ID-symbolic.s
 AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$APP_ID.desktop"
 # Lets GNOME Shell start the app for a search, or for a reminder's buttons.
 DBUS_SERVICE="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/$APP_ID.service"
+# Files an install from before 1.0.1 left under the old app ID.
+OLD_APP_ID=org.duskos.StickyNotes
+OLD_FILES=(
+  "$HOME/.local/share/applications/$OLD_APP_ID.desktop"
+  "$HOME/.local/share/icons/hicolor/scalable/apps/$OLD_APP_ID.svg"
+  "$HOME/.local/share/icons/hicolor/symbolic/apps/$OLD_APP_ID-symbolic.svg"
+  "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/$OLD_APP_ID.service"
+)
 
 # Same code the Preferences switches use (stickynotes/integration.py).
 integrate() {  # integrate <lib-dir> <python statements using `i`> [arg -> sys.argv[3]]
@@ -45,7 +53,7 @@ if (( UNINSTALL )); then
     integrate "$LIB" 'i.set_autostart(False); i.set_shortcut(False)' || true
   fi
   rm -rf -- "$LIB"
-  rm -f -- "$BIN" "$DESKTOP" "$ICON" "$SYMBOLIC_ICON" "$AUTOSTART" "$DBUS_SERVICE"
+  rm -f -- "$BIN" "$DESKTOP" "$ICON" "$SYMBOLIC_ICON" "$AUTOSTART" "$DBUS_SERVICE" "${OLD_FILES[@]}"
   echo "Removed. Notes kept in ${XDG_DATA_HOME:-$HOME/.local/share}/dusk-sticky-notes"
   exit 0
 fi
@@ -100,6 +108,7 @@ install -m 644 "$SRC/data/$APP_ID.svg" "$ICON"
 install -D -m 644 "$SRC/data/$APP_ID-symbolic.svg" "$SYMBOLIC_ICON"
 mkdir -p "$(dirname "$DBUS_SERVICE")"
 printf '[D-BUS Service]\nName=%s\nExec="%s" --gapplication-service\n' "$APP_ID" "$BIN" > "$DBUS_SERVICE"
+rm -f -- "${OLD_FILES[@]}"
 update-desktop-database -q "$(dirname "$DESKTOP")" 2>/dev/null || true
 gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 if (( AUTOSTART_OPT )); then

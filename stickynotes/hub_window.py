@@ -100,7 +100,7 @@ class HubWindow(Adw.ApplicationWindow):
         click.connect("pressed", self._on_right_click)
         self.list.add_controller(click)
 
-        self.empty = Adw.StatusPage(icon_name="org.duskos.StickyNotes", title="Start a new note",
+        self.empty = Adw.StatusPage(icon_name="io.github.phlthydelphya.StickyNotes", title="Start a new note",
                                     description="Press Ctrl+N or the + button to capture a thought.")
         self.no_results = Adw.StatusPage(icon_name="edit-find-symbolic", title="No matching notes")
 
