@@ -156,7 +156,9 @@ def test_clicked_card_opens_in_place_and_survives_autosave(app):
     hub.list.emit("row-activated", second_row)
     assert editing(hub) == [second_row.note_id] and first_row.editor is None
     editor = second_row.editor
-    assert editor.view.has_focus()
+    # get_focus, not has_focus: has_focus also needs an active window, and
+    # xvfb-run has no window manager to activate one.
+    assert hub.get_focus() is editor.view
 
     # Typing autosaves; the store change does not rebuild the card being edited.
     editor.view.get_buffer().insert_at_cursor(" edited", -1)
