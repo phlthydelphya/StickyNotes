@@ -11,3 +11,4 @@ build-aux/flatpak/build/
 build-aux/flatpak/.flatpak-builder/
 .flatpak-builder/
 repo/
+build-aux/flatpak/submission/
