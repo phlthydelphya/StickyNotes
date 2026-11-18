@@ -16,6 +16,8 @@ over by itself, and notes and settings never depended on the ID).
   top of the file). It bundles tesseract for the text in images. In the sandbox the global
   shortcuts are not available, since GNOME's custom shortcuts are outside its reach, and
   "Start at login" asks the desktop through the Background portal.
+- The AppStream screenshots in `data/screenshots` come from sample notes:
+  `xvfb-run -a -s "-screen 0 1600x1000x24" build-aux/screenshots.py`.
 
 ## Run
 

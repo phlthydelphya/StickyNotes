@@ -28,12 +28,26 @@
     <binary>dusk-sticky-notes</binary>
     <dbus type="user">io.github.phlthydelphya.StickyNotes</dbus>
   </provides>
+  <screenshots>
+    <screenshot type="default" environment="gnome">
+      <caption>The notes list, with a pinned checklist and a reminder</caption>
+      <image type="source" width="507" height="600">https://raw.githubusercontent.com/phlthydelphya/StickyNotes/v1.0.1/data/screenshots/notes-list.png</image>
+    </screenshot>
+    <screenshot environment="gnome">
+      <caption>A note popped out on the desktop</caption>
+      <image type="source" width="360" height="300">https://raw.githubusercontent.com/phlthydelphya/StickyNotes/v1.0.1/data/screenshots/note.png</image>
+    </screenshot>
+    <screenshot environment="gnome:dark">
+      <caption>The notes list in the dark style</caption>
+      <image type="source" width="507" height="600">https://raw.githubusercontent.com/phlthydelphya/StickyNotes/v1.0.1/data/screenshots/notes-list-dark.png</image>
+    </screenshot>
+  </screenshots>
   <url type="homepage">https://github.com/phlthydelphya/StickyNotes</url>
   <url type="bugtracker">https://github.com/phlthydelphya/StickyNotes/issues</url>
   <url type="vcs-browser">https://github.com/phlthydelphya/StickyNotes</url>
   <branding>
-    <color type="primary" scheme_preference="light">#f8e48b</color>
-    <color type="primary" scheme_preference="dark">#5e5320</color>
+    <color type="primary" scheme_preference="light">#fff2ab</color>
+    <color type="primary" scheme_preference="dark">#544d2a</color>
   </branding>
   <requires>
     <display_length compare="ge">360</display_length>
