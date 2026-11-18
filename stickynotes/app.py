@@ -22,7 +22,7 @@ from .preferences import Preferences, PreferencesDialog  # noqa: E402
 from .reminders import SNOOZE_MINUTES, ReminderDialog, preset_time  # noqa: E402
 from .search_provider import SearchProvider  # noqa: E402
 from .store import LoadState, NoteStore  # noqa: E402
-from .theme import color_scheme, light_variant  # noqa: E402
+from .theme import ThemeVariant, color_scheme  # noqa: E402
 from .tray import Tray  # noqa: E402
 
 APP_ID = "org.duskos.StickyNotes"
@@ -87,12 +87,13 @@ class StickyApp(Adw.Application):
         from_checkout = (source_icons / f"{APP_ID}.svg").is_file()
         if from_checkout:
             Gtk.IconTheme.get_for_display(display).add_search_path(str(source_icons))
-        priority = Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
-        # Added first, so the note layout and palette below still win over it.
-        self._theme_css = Gtk.CssProvider()
-        self._light_theme = light_variant(GLib.get_user_config_dir())
-        self._theme_is_light = False
-        Gtk.StyleContext.add_provider_for_display(display, self._theme_css, priority)
+        # The desktop theme's other variant sits between USER and the notes' own CSS.
+        user = Gtk.STYLE_PROVIDER_PRIORITY_USER
+        self._theme = ThemeVariant(
+            GLib.get_user_config_dir(),
+            attach=lambda p: Gtk.StyleContext.add_provider_for_display(display, p, user + 1),
+            detach=lambda p: Gtk.StyleContext.remove_provider_for_display(display, p))
+        priority = user + 2
         layout = Gtk.CssProvider()
         layout.load_from_path(str(STYLE))
         Gtk.StyleContext.add_provider_for_display(display, layout, priority)
@@ -241,13 +242,7 @@ class StickyApp(Adw.Application):
     def _load_palette(self, styles, *_):
         dark = styles.get_dark()
         self._palette_css.load_from_string(build_css(dark))
-        light = not dark and self._light_theme is not None
-        if light != self._theme_is_light:
-            self._theme_is_light = light
-            if light:
-                self._theme_css.load_from_path(str(self._light_theme))
-            else:
-                self._theme_css.load_from_string("")
+        self._theme.update(dark)
 
     def _add_action(self, name, callback, param=None):
         act = Gio.SimpleAction.new(name, GLib.VariantType.new(param) if param else None)

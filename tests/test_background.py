@@ -57,20 +57,56 @@ def test_style_preference_values(tmp_path):
     assert Preferences(tmp_path).load().style == "system"  # unknown style ignored
 
 
-def test_light_variant_follows_a_dark_only_theme_import(tmp_path):
-    from stickynotes.theme import light_variant
-    assert light_variant(tmp_path) is None  # no gtk.css
-    theme = tmp_path / "theme"
-    theme.mkdir()
-    (theme / "gtk-dark.css").write_text("")
+def _theme_dirs(tmp_path, imported, quote='"'):
+    theme = tmp_path / "my theme"
+    theme.mkdir(exist_ok=True)
     user = tmp_path / "gtk-4.0"
-    user.mkdir()
-    (user / "gtk.css").write_text(f'/* x */\n@import url("file://{theme}/gtk-dark.css");\n')
-    assert light_variant(tmp_path) is None  # no light sibling
+    user.mkdir(exist_ok=True)
+    uri = (theme / imported).as_uri()  # "my%20theme": escapes must be decoded
+    (user / "gtk.css").write_text(f"@import url({quote}{uri}{quote});\n")
+    return theme, user
+
+
+def test_imported_variant_finds_the_other_variant_both_ways(tmp_path):
+    from stickynotes.theme import imported_variant
+    assert imported_variant(tmp_path) is None  # no gtk.css
+    theme, user = _theme_dirs(tmp_path, "gtk-dark.css")
+    (theme / "gtk-dark.css").write_text("")
+    assert imported_variant(tmp_path) is None  # no light sibling
     (theme / "gtk.css").write_text("")
-    assert light_variant(tmp_path) == theme / "gtk.css"
-    (user / "gtk.css").write_text(f"@import url('file://{theme}/gtk.css');\n")
-    assert light_variant(tmp_path) is None  # already the light variant
+    assert imported_variant(tmp_path) == (True, theme / "gtk.css")
+    _theme_dirs(tmp_path, "gtk.css", quote="'")
+    assert imported_variant(tmp_path) == (False, theme / "gtk-dark.css")
+    _theme_dirs(tmp_path, "gtk.css", quote="")
+    assert imported_variant(tmp_path) == (False, theme / "gtk-dark.css")
+    uri = (theme / "gtk-dark.css").as_uri()
+    (user / "gtk.css").write_text(f'/* @import url("{uri}"); */\n')
+    assert imported_variant(tmp_path) is None  # commented out
+
+
+def test_theme_variant_attaches_only_the_mismatched_variant(tmp_path):
+    from stickynotes.theme import ThemeVariant
+    theme, user = _theme_dirs(tmp_path, "gtk-dark.css")
+    (theme / "gtk-dark.css").write_text("")
+    (theme / "gtk.css").write_text("")
+    attached, loads = [], []
+    tv = ThemeVariant(tmp_path, attached.append, attached.remove,
+                      load=lambda p: loads.append(p) or ("css", p), monitor=False)
+    tv.update(True)
+    assert attached == []  # desktop already dark
+    tv.update(False)
+    assert attached == [("css", theme / "gtk.css")]
+    tv.update(True)
+    tv.update(False)
+    assert attached == [("css", theme / "gtk.css")] and len(loads) == 1  # parsed once
+    _theme_dirs(tmp_path, "gtk.css")  # desktop switched to its light variant
+    tv.reload()
+    assert attached == []
+    tv.update(True)
+    assert attached == [("css", theme / "gtk-dark.css")]
+    (user / "gtk.css").write_text("")
+    tv.reload()
+    assert attached == []
 
 
 def test_autostart_file_round_trip(tmp_path):
