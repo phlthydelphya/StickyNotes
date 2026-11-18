@@ -13,6 +13,7 @@ uses the theme's own tokens for the scheme on screen.
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import gi
 
@@ -27,7 +28,7 @@ VARIANTS = {"gtk.css": "gtk-dark.css", "gtk-dark.css": "gtk.css"}
 _COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _IMPORT = re.compile(r"""@import\s+url\(\s*(["']?)(file://[^"')]+?)\1\s*\)\s*;?""")
 _URL = re.compile(r"""url\(\s*(["']?)([^"')]+?)\1\s*\)""")
-_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:|^/")
+_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
 def color_scheme(style):
@@ -65,15 +66,10 @@ def imported_variant(config_dir):
     return None
 
 
-class Variant(tuple):
-    """(imported_is_dark, other variant's path, the user's own rules)."""
-
-    def __new__(cls, imported_is_dark, other, user_rules):
-        return super().__new__(cls, (imported_is_dark, other, user_rules))
-
-    imported_is_dark = property(lambda self: self[0])
-    other = property(lambda self: self[1])
-    user_rules = property(lambda self: self[2])
+class Variant(NamedTuple):
+    imported_is_dark: bool
+    other: Path  # the other variant's file
+    user_rules: str  # the user's gtk.css without its theme import
 
     def css(self):
         """The other variant, then the user's own rules from gtk.css on top of it,
@@ -83,7 +79,9 @@ class Variant(tuple):
 
 
 def _rebase(text, base):
-    """Make relative url()s absolute, since the rules no longer load from base."""
+    """Make url()s that are file paths absolute file:// URIs, since the rules no
+    longer load from base. An absolute path stays the same path (base / "/x" is
+    "/x"); a URL with a scheme is left alone."""
     def absolute(match):
         quote, ref = match.group(1), match.group(2)
         if _SCHEME.match(ref):

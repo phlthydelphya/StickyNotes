@@ -94,13 +94,15 @@ def test_variant_css_keeps_the_users_own_rules_on_top(tmp_path):
         f'@import url("{dark_uri}");\n'
         'window.maximized { border-radius: 20px; }\n'
         '.logo { background-image: url("img/logo.png"); }\n'
-        '.web { background-image: url("https://example.org/a.png"); }\n')
+        '.web { background-image: url("https://example.org/a.png"); }\n'
+        '.abs { background-image: url("/usr/share/pixmaps/a.png"); }\n')
     css = imported_variant(tmp_path).css()
     light = css.index(f'@import url("{(theme / "gtk.css").as_uri()}");')
     assert light == 0 and dark_uri not in css  # variant first, dark import gone
     assert css.index("border-radius: 20px") > light  # user rule after it, so it wins
     assert f'url("{(user / "img" / "logo.png").as_uri()}")' in css  # relative url rebased
     assert 'url("https://example.org/a.png")' in css
+    assert 'url("file:///usr/share/pixmaps/a.png")' in css  # absolute path made a URI
 
 
 def test_theme_variant_attaches_only_the_mismatched_variant(tmp_path):
